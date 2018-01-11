@@ -4,8 +4,24 @@ from pandas.io.json import json_normalize
 from src.common import exceptions
 from pyproj import Proj
 import geojson
+from pymongo import MongoClient, DESCENDING
 
+def collect_records(collection, limit=None):
+    
+    if limit:
+        records = list(collection.find(sort=[("_id", DESCENDING)]).limit(limit))
+    else:
+        records = list(collection.find(sort=[("_id", DESCENDING)]))
 
+    return records
+
+def tabulate_records(records):
+        
+    raw_data = pd.DataFrame(records)
+    raw_data['startTime'] = pd.to_datetime(raw_data['startTime'].str[:-4])
+    raw_data['endTime'] = pd.to_datetime(raw_data['endTime'].str[:-4])
+
+    return raw_data
 
 def json_to_df(row, json_column):
     df_from_json = pd.io.json.json_normalize(row[json_column]).add_prefix(json_column + '_')    

@@ -1,27 +1,9 @@
 import pandas as pd
-from pymongo import MongoClient, DESCENDING
 from sqlalchemy.types import JSON as typeJSON
 from src.common import exceptions
 from src.data.functions import UTM_to_lon_lat
 from shapely.geometry import LineString
 
-
-def collect_records(collection, limit=None):
-    
-    if limit:
-        records = list(collection.find(sort=[("_id", DESCENDING)]).limit(limit))
-    else:
-        records = list(collection.find(sort=[("_id", DESCENDING)]))
-
-    return records
-
-def tabulate_records(records):
-        
-    raw_data = pd.DataFrame(records)
-    raw_data['startTime'] = pd.to_datetime(raw_data['startTime'].str[:-4])
-    raw_data['endTime'] = pd.to_datetime(raw_data['endTime'].str[:-4])
-
-    return raw_data
 
 def prep_rawdata_tosql(raw_data):
 
