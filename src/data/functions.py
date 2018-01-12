@@ -23,6 +23,17 @@ def tabulate_records(records):
 
     return raw_data
 
+def prep_rawdata_tosql(raw_data):
+
+    raw_data_tosql = raw_data[["startTime", "endTime"]]
+    rename_dict = {"startTime": "MgrcDateStart",
+                   "endTime": "MgrcDateEnd",
+                  }
+
+    raw_data_tosql = raw_data_tosql.rename(columns=rename_dict)
+
+    return raw_data_tosql
+
 def json_to_df(row, json_column):
     df_from_json = pd.io.json.json_normalize(row[json_column]).add_prefix(json_column + '_')    
     df = pd.concat([row]*len(df_from_json), axis=1).transpose()    
