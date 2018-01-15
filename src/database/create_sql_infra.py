@@ -7,11 +7,13 @@ import dotenv
 import pandas as pd
 
 from sqlalchemy import create_engine, Column, Integer, DateTime
-from sqlalchemy import UniqueConstraint, exc, ForeignKey, String, Float, Unicode
+from sqlalchemy import ForeignKeyConstraint, UniqueConstraint, exc, ForeignKey, Float, Unicode
 from sqlalchemy.engine.url import URL
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import inspect, MetaData
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.types import JSON as typeJSON
+from sqlalchemy.types import BigInteger
 
 project_dir = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
 dotenv_path = os.path.join(project_dir, '.env')
@@ -40,7 +42,7 @@ class Trecho(Base):
     id = Column("TrchId", Integer, primary_key=True)
     arcgisId = Column("TrchIdArcgis", Integer)
     codLogr = Column("TrchCodRua", Integer)
-    nomLogr = Column("TrchDscNome", String)
+    nomLogr = Column("TrchDscNome", Unicode)
     metrica = Column("TrchQtdMetrosAcumulados", Integer)
     comprimento = Column("TrchQtdComprimento", Float)
     xCom = Column("TrchDscCoordxUtmComeco", Float)
@@ -65,29 +67,44 @@ class Jam(Base):
     __tablename__ = "Jam"
     
     id = Column("JamId", Integer, primary_key=True)
-    object_id = Column("ObjectId", String)
-    dateStart = Column("JamDateStart", DateTime, ForeignKey("MongoRecord.MgrcDateStart"), nullable=False)
+    object_id = Column("JamObjectId", Unicode)
+    dateStart = Column("JamDateStart", DateTime,
+                       ForeignKey("MongoRecord.MgrcDateStart", ondelete="CASCADE"), nullable=False)
     dateEnd = Column("JamDateEnd", DateTime)
     city = Column("JamDscCity", Unicode)
-    coords = Column("JamDscCoordinatesLonLat", Unicode)
+    coords = Column("JamDscCoordinatesLonLat", typeJSON)
     roadType = Column("JamDscRoadType", Integer)
-    segments = Column("JamDscSegments", Unicode)
+    segments = Column("JamDscSegments", typeJSON)
     street = Column("JamDscStreet", Unicode)
     endNode = Column("JamDscStreetEndNode", Unicode)
-    turnType = Column("JamDscTurnType", Integer)
-    type = Column("JamDscType", Unicode)
+    turnType = Column("JamDscTurnType", Unicode)
+    jam_type = Column("JamDscType", Unicode)
     level = Column("JamIndLevelOfTraffic", Integer)
     length = Column("JamQtdLengthMeters", Integer)
     speed = Column("JamSpdMetersPerSecond", Float)
     delay = Column("JamTimeDelayInSeconds", Integer)
-    pubMillis = Column("JamTimePubMillis", Integer)
+    pubMillis = Column("JamTimePubMillis", BigInteger)
     uuid = Column("JamUuid", Integer)
     
     __table_args__ = (UniqueConstraint("JamDateStart", "JamUuid", name="JamDateUuid"),)
 
+class JamPerTrecho(Base):
+    __tablename__ = "JamPerTrecho"
+    
+    id = Column("JptId", Integer, primary_key=True)
+    JamDateStart = Column("JamDateStart", DateTime, nullable=False)
+    JamUuid = Column("JamUuid", Integer, nullable=False) 
+    TrchId = Column("TrchId", Integer, ForeignKey("Trecho.TrchId"), nullable=False)
+    
+    __table_args__ = (ForeignKeyConstraint([JamDateStart, JamUuid],
+                                           ["Jam.JamDateStart", "Jam.JamUuid"],
+                                           ondelete="CASCADE"),
+                      UniqueConstraint("JamDateStart", "JamUuid", "TrchId", name="trecho_engarrafado"),
+                      {})
+
 Base.metadata.create_all(engine)
 
-df_trechos = pd.read_csv(project_dir + "/data/external/sepud_logradouros.csv")
+df_trechos = pd.read_csv(project_dir + "/data/external/sepud_logradouros.csv", decimal=",")
 
 columns = {"objectid,N,10,0": "TrchIdArcgis",
           "codlogra,N,10,0": "TrchCodRua",
@@ -108,6 +125,6 @@ cols = [v for k, v in columns.items() ]
 df_trechos = df_trechos[cols]
 
 #Pedir confirmação do usuário antes de implementar a função
-df_trechos.to_sql("Trecho", meta.bind, if_exists="replace", index_label="TrchId")
-
-Base.metadata.create_all(engine)
+trecho = meta.tables["Trecho"]
+trecho.delete().execute()
+df_trechos.to_sql("Trecho", meta.bind, if_exists="append", index_label="TrchId")

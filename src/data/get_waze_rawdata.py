@@ -18,7 +18,7 @@ client = MongoClient(uri)
 db = client.ccp
 collection = db.ccp_collection
 
-limit=5
+limit=100
 records = collect_records(collection, limit)
 
 with open(project_dir+"/data/raw/waze_rawdata.txt", 'w') as outfile:
