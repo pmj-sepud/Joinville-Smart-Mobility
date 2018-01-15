@@ -109,7 +109,7 @@ def UTM_to_lon_lat(l):
         
     return list_of_coordinates
 
-def build_geo_trechos(meta):
+def build_geo_trechos(meta, buffer=10):
     trecho = meta.tables['Trecho']
     trechos_query = trecho.select()
     df_trechos = pd.read_sql(trechos_query, con=meta.bind)
@@ -121,7 +121,7 @@ def build_geo_trechos(meta):
                                                               ], axis=1)
 
     df_trechos["Street_line_LonLat"] = df_trechos['Street_line_XY'].apply(UTM_to_lon_lat)
-    df_trechos['trecho_LineString'] = df_trechos.apply(lambda x: LineString(x['Street_line_XY']).buffer(10), axis=1)
+    df_trechos['trecho_LineString'] = df_trechos.apply(lambda x: LineString(x['Street_line_XY']).buffer(buffer), axis=1)
     crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
     geo_trechos = gpd.GeoDataFrame(df_trechos, crs=crs, geometry="trecho_LineString")
     geo_trechos = geo_trechos.to_crs({'init': 'epsg:4326'})
@@ -138,21 +138,24 @@ def build_df_alerts(raw_data):
         
     return df_alerts
 
-def build_df_jams(raw_data):
+def tabulate_jams(raw_data, buffer=20):
     if 'jams' in raw_data:
         df_jams_cleaned = raw_data[~(raw_data['jams'].isnull())]
         df_jams = pd.concat([json_to_df(row, 'jams') for _, row in df_jams_cleaned.iterrows()])
         df_jams.reset_index(inplace=True, drop=True)
-        df_jams['jams_line_list'] = df_jams['jams_line'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
-        df_jams['jams_line_UTM'] = df_jams['jams_line_list'].apply(lon_lat_to_UTM)
-        df_jams['jam_LineString'] = df_jams.apply(lambda x: LineString(x['jams_line_UTM']).buffer(15), axis=1)
-        crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-        geo_jams = gpd.GeoDataFrame(df_jams, crs=crs, geometry="jam_LineString")
-        geo_jams = geo_jams.to_crs({'init': 'epsg:4326'})
     else:
         raise exceptions.NoJamError()
         
     return geo_jams
+
+def build_geo_jams(meta):
+    df_jams['jams_line_list'] = df_jams['jams_line'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
+    df_jams['jams_line_UTM'] = df_jams['jams_line_list'].apply(lon_lat_to_UTM)
+    df_jams['jam_LineString'] = df_jams.apply(lambda x: LineString(x['jams_line_UTM']).buffer(buffer), axis=1)
+    crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+    geo_jams = gpd.GeoDataFrame(df_jams, crs=crs, geometry="jam_LineString")
+    geo_jams = geo_jams.to_crs({'init': 'epsg:4326'})
+
     
 def build_df_irregularities(raw_data):
     if 'irregularities' in raw_data:
@@ -163,31 +166,6 @@ def build_df_irregularities(raw_data):
         raise Exception("No Irregularities in the given period")
         
     return df_irregularities
-
-def get_impacted_trechos(row, geo_trechos):
-    crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-    df = pd.DataFrame(row).transpose()
-    geo_row = gpd.GeoDataFrame(df, crs=crs, geometry="jam_LineString")
-    geo_row = geo_row.to_crs({'init': 'epsg:4326'})
-    traffic = gpd.sjoin(geo_trechos, geo_row, how="inner", op="within")
-    trch_list = traffic.index.tolist()
-    import pdb
-    pdb.set_trace()
-    
-    return trch_list
-
-def explode_impacted_trechos(df_jams):
-    rows = []  
-    def append_twice(row, logr):
-        temp_list = row.drop("impacted_trechos").tolist()
-        temp_list.append(logr)
-        rows.append(temp_list)
-
-    _ = df_jams.copy().apply(lambda row: [append_twice(row, logr) for logr in row['impacted_trechos']], axis=1)
-    
-    df_jams_pertrecho = pd.DataFrame(rows, columns=df_jams.columns)
-    
-    return df_jams_pertrecho
 
 def print_coordinates(coords):
 

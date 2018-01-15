@@ -15,9 +15,8 @@ from sqlalchemy import inspect, MetaData
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import JSON as typeJSON
 
-from src.data.functions import (tabulate_records, prep_rawdata_tosql,
-                               build_df_jams, prep_jams_tosql, build_geo_trechos,
-                               get_impacted_trechos, explode_impacted_trechos, prep_jpt_tosql)
+from src.data.functions import (tabulate_records, prep_rawdata_tosql, build_geo_jams,
+                                prep_jams_tosql, build_geo_trechos, prep_jpt_tosql)
 
 project_dir = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
 dotenv_path = os.path.join(project_dir, '.env')
@@ -54,7 +53,7 @@ rawdata_tosql.to_sql("MongoRecord", con=meta.bind, if_exists="append", index=Fal
 
 #Build dataframe and store in PostgreSQL
 try:
-  df_jams = build_df_jams(raw_data)
+  df_jams = tabulate_jams(raw_data)
 except exceptions.NoJamError:
     print("No Jam in the given period")
     sys.exit()
@@ -67,10 +66,3 @@ jams_tosql.to_sql("Jam", con=meta.bind, if_exists="append", index=False,
                        }
                  )
 
-#Build and store JamPerTrecho
-geo_trechos = build_geo_trechos(meta)
-#df_jams['impacted_trechos'] = df_jams.apply(lambda x: get_impacted_trechos(x, geo_trechos), axis=1)
-jams_per_trecho = gpd.sjoin(df_jams, geo_trechos, how="inner", op="contains")
-#jams_per_trecho = explode_impacted_trechos(df_jams)
-jpt_tosql = prep_jpt_tosql(jams_per_trecho) 
-jpt_tosql.to_sql("JamPerTrecho", con=meta.bind, if_exists="append", index=False)
