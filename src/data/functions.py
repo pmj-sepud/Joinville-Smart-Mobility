@@ -65,17 +65,6 @@ def prep_jams_tosql(df_jams):
 
     return jams_tosql
 
-def prep_jpt_tosql(jams_per_trecho):
-
-    jpt_tosql = jams_per_trecho[["TrchId", "jams_uuid", "startTime" ]]
-    rename_dict = {"startTime": "JamDateStart",
-                   "jams_uuid": "JamUuid",
-                  }
-
-    jpt_tosql = jpt_tosql.rename(columns=rename_dict)
-
-    return jpt_tosql
-
 def json_to_df(row, json_column):
     df_from_json = pd.io.json.json_normalize(row[json_column]).add_prefix(json_column + '_')    
     df = pd.concat([row]*len(df_from_json), axis=1).transpose()    
@@ -146,15 +135,20 @@ def tabulate_jams(raw_data, buffer=20):
     else:
         raise exceptions.NoJamError()
         
-    return geo_jams
+    return df_jams
 
-def build_geo_jams(meta):
-    df_jams['jams_line_list'] = df_jams['jams_line'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
+def build_geo_jams(meta, buffer=20):
+    jam = meta.tables['Jam']
+    jams_query = jam.select()
+    df_jams = pd.read_sql(jams_query, con=meta.bind)
+    df_jams['jams_line_list'] = df_jams['JamDscCoordinatesLonLat'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
     df_jams['jams_line_UTM'] = df_jams['jams_line_list'].apply(lon_lat_to_UTM)
     df_jams['jam_LineString'] = df_jams.apply(lambda x: LineString(x['jams_line_UTM']).buffer(buffer), axis=1)
     crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
     geo_jams = gpd.GeoDataFrame(df_jams, crs=crs, geometry="jam_LineString")
     geo_jams = geo_jams.to_crs({'init': 'epsg:4326'})
+
+    return geo_jams
 
     
 def build_df_irregularities(raw_data):

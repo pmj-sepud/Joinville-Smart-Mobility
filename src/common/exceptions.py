@@ -1,2 +1,0 @@
-class NoJamError(Exception):
-	pass

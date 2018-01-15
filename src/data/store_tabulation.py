@@ -8,15 +8,13 @@ import json
 from io import StringIO
 import geopandas as gpd
 
-from sqlalchemy import create_engine, Column, Integer, DateTime, UniqueConstraint, exc
+from sqlalchemy import create_engine, exc
 from sqlalchemy.engine.url import URL
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import inspect, MetaData
+from sqlalchemy import MetaData
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import JSON as typeJSON
 
-from src.data.functions import (tabulate_records, prep_rawdata_tosql, build_geo_jams,
-                                prep_jams_tosql, build_geo_trechos, prep_jpt_tosql)
+from src.data.functions import tabulate_records, prep_rawdata_tosql, tabulate_jams, prep_jams_tosql
 
 project_dir = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
 dotenv_path = os.path.join(project_dir, '.env')
@@ -34,7 +32,6 @@ DATABASE = {
 
 db_url = URL(**DATABASE)
 engine = create_engine(db_url)
-Base = declarative_base()
 meta = MetaData()
 meta.bind = engine
 meta.reflect()
@@ -51,12 +48,8 @@ rawdata_tosql = prep_rawdata_tosql(raw_data)
 rawdata_tosql.to_sql("MongoRecord", con=meta.bind, if_exists="append", index=False)
 
 
-#Build dataframe and store in PostgreSQL
-try:
-  df_jams = tabulate_jams(raw_data)
-except exceptions.NoJamError:
-    print("No Jam in the given period")
-    sys.exit()
+#Build dataframe of jams and store in PostgreSQL
+df_jams = tabulate_jams(raw_data)
 jam = meta.tables["Jam"]
 jam.delete().execute()
 jams_tosql = prep_jams_tosql(df_jams)
@@ -65,4 +58,8 @@ jams_tosql.to_sql("Jam", con=meta.bind, if_exists="append", index=False,
                         "JamDscSegments": typeJSON
                        }
                  )
+
+#Build dataframe of alerts and store in PostgreSQL
+
+#Build dataframe of irregularities and store in PostgreSQL
 
