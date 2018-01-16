@@ -8,9 +8,8 @@ import json
 from io import StringIO
 import geopandas as gpd
 
-from sqlalchemy import create_engine, exc
+from sqlalchemy import create_engine, exc, MetaData
 from sqlalchemy.engine.url import URL
-from sqlalchemy import MetaData
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import JSON as typeJSON
 

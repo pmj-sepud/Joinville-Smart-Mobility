@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 from pandas.io.json import json_normalize
-from src.common import exceptions
 from pyproj import Proj
 import geojson
 from pymongo import MongoClient, DESCENDING
@@ -36,6 +35,46 @@ def prep_rawdata_tosql(raw_data):
 
     return raw_data_tosql
 
+
+def json_to_df(row, json_column):
+    df_from_json = pd.io.json.json_normalize(row[json_column]).add_prefix(json_column + '_')    
+    df = pd.concat([row]*len(df_from_json), axis=1).transpose()    
+    df.reset_index(inplace=True, drop=True)    
+    
+    return pd.concat([df, df_from_json], axis=1)
+
+def tabulate_jams(raw_data):
+    if 'jams' in raw_data:
+        df_jams_cleaned = raw_data[~(raw_data['jams'].isnull())]
+        df_jams = pd.concat([json_to_df(row, 'jams') for _, row in df_jams_cleaned.iterrows()])
+        df_jams.reset_index(inplace=True, drop=True)
+    else:
+        raise Exception()
+        
+    return df_jams
+
+
+def tabulate_alerts(raw_data):
+    if 'alerts' in raw_data:
+        df_alerts_cleaned = raw_data[~(raw_data['alerts'].isnull())]
+        df_alerts = pd.concat([json_to_df(row, 'alerts') for _, row in df_alerts_cleaned.iterrows()])
+        df_alerts.reset_index(inplace=True, drop=True)
+    else:
+        raise Exception("No Alerts in the given period")
+        
+    return df_alerts
+
+    
+def tabulate_irregularities(raw_data):
+    if 'irregularities' in raw_data:
+        df_irregularities_cleaned = raw_data[~(raw_data['irregularities'].isnull())]
+        df_irregularities = pd.concat([json_to_df(row, 'irregularities') for _, row in df_irregularities_cleaned.iterrows()])
+        df_irregularities.reset_index(inplace=True, drop=True)
+    else:
+        raise Exception("No Irregularities in the given period")
+        
+    return df_irregularities
+
 def prep_jams_tosql(df_jams):
     rename_dict = {"_id": "JamObjectId",
                    "endTime": "JamDateEnd",
@@ -65,12 +104,6 @@ def prep_jams_tosql(df_jams):
 
     return jams_tosql
 
-def json_to_df(row, json_column):
-    df_from_json = pd.io.json.json_normalize(row[json_column]).add_prefix(json_column + '_')    
-    df = pd.concat([row]*len(df_from_json), axis=1).transpose()    
-    df.reset_index(inplace=True, drop=True)    
-    
-    return pd.concat([df, df_from_json], axis=1)
 
 def lon_lat_to_UTM(l):
     '''
@@ -117,26 +150,6 @@ def build_geo_trechos(meta, buffer=10):
 
     return geo_trechos
 
-def build_df_alerts(raw_data):
-    if 'alerts' in raw_data:
-        df_alerts_cleaned = raw_data[~(raw_data['alerts'].isnull())]
-        df_alerts = pd.concat([json_to_df(row, 'alerts') for _, row in df_alerts_cleaned.iterrows()])
-        df_alerts.reset_index(inplace=True, drop=True)
-    else:
-        raise Exception("No Alerts in the given period")
-        
-    return df_alerts
-
-def tabulate_jams(raw_data, buffer=20):
-    if 'jams' in raw_data:
-        df_jams_cleaned = raw_data[~(raw_data['jams'].isnull())]
-        df_jams = pd.concat([json_to_df(row, 'jams') for _, row in df_jams_cleaned.iterrows()])
-        df_jams.reset_index(inplace=True, drop=True)
-    else:
-        raise exceptions.NoJamError()
-        
-    return df_jams
-
 def build_geo_jams(meta, buffer=20):
     jam = meta.tables['Jam']
     jams_query = jam.select()
@@ -149,33 +162,6 @@ def build_geo_jams(meta, buffer=20):
     geo_jams = geo_jams.to_crs({'init': 'epsg:4326'})
 
     return geo_jams
-
-    
-def build_df_irregularities(raw_data):
-    if 'irregularities' in raw_data:
-        df_irregularities_cleaned = raw_data[~(raw_data['irregularities'].isnull())]
-        df_irregularities = pd.concat([json_to_df(row, 'irregularities') for _, row in df_irregularities_cleaned.iterrows()])
-        df_irregularities.reset_index(inplace=True, drop=True)
-    else:
-        raise Exception("No Irregularities in the given period")
-        
-    return df_irregularities
-
-def print_coordinates(coords):
-
-    l = []
-    for t in coords:
-        x, y = t
-        l.append({'lat': y, 'lng': x})
-        
-    string = ''
-    for coord in l:
-        pair = ",".join("{}: {}".format(k,v) for k,v in coord.items())
-        pair = "{" + pair + "},"
-        string += pair
-    string = string.strip()
-
-    return string
 
 def df_to_geojson(df, filename="result_geojson.json"):
     features = []
