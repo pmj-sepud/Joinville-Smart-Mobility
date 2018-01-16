@@ -13,7 +13,7 @@ from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import JSON as typeJSON
 
-from src.data.functions import tabulate_records, prep_rawdata_tosql, tabulate_jams, prep_jams_tosql
+from src.data.processing_func import tabulate_records, prep_rawdata_tosql, tabulate_jams, prep_jams_tosql
 
 project_dir = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
 dotenv_path = os.path.join(project_dir, '.env')

@@ -11,7 +11,7 @@ from sqlalchemy.engine.url import URL
 from sqlalchemy import MetaData
 from sqlalchemy.orm import sessionmaker
 
-from src.data.functions import (build_geo_jams, build_geo_trechos)
+from src.data.processing_func import (build_geo_jams, build_geo_trechos)
 
 project_dir = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
 dotenv_path = os.path.join(project_dir, '.env')

@@ -10,7 +10,7 @@ import json
 from bson.json_util import dumps
 
 from pymongo import MongoClient, DESCENDING, ASCENDING
-from functions import collect_records
+from processing_func import collect_records
 
 #MongoDB Connection
 uri = os.environ.get("mongo_uri")
