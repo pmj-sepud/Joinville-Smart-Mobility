@@ -131,24 +131,24 @@ def UTM_to_lon_lat(l):
         
     return list_of_coordinates
 
-def build_geo_trechos(meta, buffer=10):
-    trecho = meta.tables['Trecho']
-    trechos_query = trecho.select()
-    df_trechos = pd.read_sql(trechos_query, con=meta.bind)
+def build_geo_sections(meta, buffer=10):
+    section = meta.tables['Section']
+    sections_query = section.select()
+    df_sections = pd.read_sql(sections_query, con=meta.bind)
 
     #Create Geometry shapes
-    df_trechos["Street_line_XY"] = df_trechos.apply(lambda x: [tuple([x['TrchDscCoordxUtmComeco'], x['TrchDscCoordyUtmComeco']]),
-                                                               tuple([x['TrchDscCoordxUtmMeio'], x['TrchDscCoordyUtmMeio']]),
-                                                               tuple([x['TrchDscCoordxUtmFinal'], x['TrchDscCoordyUtmFinal']]),
+    df_sections["Street_line_XY"] = df_sections.apply(lambda x: [tuple([x['SctnDscCoordxUtmComeco'], x['SctnDscCoordyUtmComeco']]),
+                                                               tuple([x['SctnDscCoordxUtmMeio'], x['SctnDscCoordyUtmMeio']]),
+                                                               tuple([x['SctnDscCoordxUtmFinal'], x['SctnDscCoordyUtmFinal']]),
                                                               ], axis=1)
 
-    df_trechos["Street_line_LonLat"] = df_trechos['Street_line_XY'].apply(UTM_to_lon_lat)
-    df_trechos['trecho_LineString'] = df_trechos.apply(lambda x: LineString(x['Street_line_XY']).buffer(buffer), axis=1)
+    df_sections["Street_line_LonLat"] = df_sections['Street_line_XY'].apply(UTM_to_lon_lat)
+    df_sections['section_LineString'] = df_sections.apply(lambda x: LineString(x['Street_line_XY']).buffer(buffer), axis=1)
     crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-    geo_trechos = gpd.GeoDataFrame(df_trechos, crs=crs, geometry="trecho_LineString")
-    geo_trechos = geo_trechos.to_crs({'init': 'epsg:4326'})
+    geo_sections = gpd.GeoDataFrame(df_sections, crs=crs, geometry="section_LineString")
+    geo_sections = geo_sections.to_crs({'init': 'epsg:4326'})
 
-    return geo_trechos
+    return geo_sections
 
 def build_geo_jams(meta, buffer=20):
     jam = meta.tables['Jam']
@@ -182,67 +182,67 @@ def df_to_geojson(df, filename="result_geojson.json"):
     with open(filename, "w") as fp:
         geojson.dump(geojson.FeatureCollection(features), fp, sort_keys=True)
 
-def normalize_jpt(df_jpt):
+def normalize_jps(df_jps):
     #Avoid double-counting of jams (probably lanes)
-    norm_df_jpt = pd.pivot_table(df_jpt,
-                                 index=["TrchId",
+    norm_df_jps = pd.pivot_table(df_jps,
+                                 index=["SctnId",
                                         "JamDateStart",
-                                        "TrchDscNome",
-                                        "TrchQtdComprimento",
-                                        "TrchDscCoordxUtmComeco",
-                                        "TrchDscCoordyUtmComeco",
+                                        "SctnDscNome",
+                                        "SctnQtdComprimento",
+                                        "SctnDscCoordxUtmComeco",
+                                        "SctnDscCoordyUtmComeco",
                                         "ClfuDscClassFunc",
                                         "LonDirection",
                                         "LatDirection"])
-    norm_df_jpt.reset_index(inplace=True)
-    norm_df_jpt.drop("JamUuid", axis=1, inplace=True)
+    norm_df_jps.reset_index(inplace=True)
+    norm_df_jps.drop("JamUuid", axis=1, inplace=True)
     
-    return norm_df_jpt
+    return norm_df_jps
 
-def get_pivot_jpt_means(norm_df_jpt):
+def get_pivot_jps_means(norm_df_jps):
     #Médias
-    pivot_jpt_means = pd.pivot_table(norm_df_jpt,
-                                     index=["TrchId", "TrchDscNome", "TrchDscCoordxUtmComeco", "TrchDscCoordyUtmComeco", "ClfuDscClassFunc"],
+    pivot_jps_means = pd.pivot_table(norm_df_jps,
+                                     index=["SctnId", "SctnDscNome", "SctnDscCoordxUtmComeco", "SctnDscCoordyUtmComeco", "ClfuDscClassFunc"],
                                      values=["JamIndLevelOfTraffic",
                                              "JamIndLevelOfTrafficSqrd",
                                              "JamSpdMetersPerSecond",
-                                             "TrchQtdComprimento",
+                                             "SctnQtdComprimento",
                                              "JamTimeDelayInSeconds",
                                              "JamQtdLengthMeters"]
                                     )
     
-    pivot_jpt_means['JamSpdKmPerHour'] = pivot_jpt_means['JamSpdMetersPerSecond']*3.6
+    pivot_jps_means['JamSpdKmPerHour'] = pivot_jps_means['JamSpdMetersPerSecond']*3.6
     
-    return pivot_jpt_means
+    return pivot_jps_means
 
-def get_pivot_jpt_count(norm_df_jpt):
+def get_pivot_jps_count(norm_df_jps):
     #Contagens
-    pivot_jpt_count = pd.pivot_table(norm_df_jpt,
-                                     index=["TrchId", "TrchDscNome", "TrchDscCoordxUtmComeco", "TrchDscCoordyUtmComeco", "ClfuDscClassFunc"],
+    pivot_jps_count = pd.pivot_table(norm_df_jps,
+                                     index=["SctnId", "SctnDscNome", "SctnDscCoordxUtmComeco", "SctnDscCoordyUtmComeco", "ClfuDscClassFunc"],
                                      values=["JamDateStart"],
                                      aggfunc= "count"                
                                      )
-    return pivot_jpt_count
+    return pivot_jps_count
 
-def gen_pivot_table(df_jpt, total_observations):
+def gen_pivot_table(df_jps, total_observations):
     
-    norm_df_jpt = normalize_jpt(df_jpt)
-    pivot_jpt_means = get_pivot_jpt_means(norm_df_jpt)
-    pivot_jpt_count = get_pivot_jpt_count(norm_df_jpt)
+    norm_df_jps = normalize_jps(df_jps)
+    pivot_jps_means = get_pivot_jps_means(norm_df_jps)
+    pivot_jps_count = get_pivot_jps_count(norm_df_jps)
     
     #Concatenate and refine
-    pivot_jpt = pd.concat([pivot_jpt_means, pivot_jpt_count], axis=1)
-    pivot_jpt['Percentual de trânsito (min engarrafados / min monitorados)'] = pivot_jpt['JamDateStart'] / total_observations
-    pivot_jpt.reset_index(inplace=True)
-    pivot_jpt.set_index("TrchId", inplace=True)
-    pivot_jpt.drop(["JamDateStart", "JamSpdMetersPerSecond"], axis=1, inplace=True)
-    pivot_jpt.rename(columns={'JamSpdKmPerHour': 'Velocidade média (km/h)',
+    pivot_jps = pd.concat([pivot_jps_means, pivot_jps_count], axis=1)
+    pivot_jps['Percentual de trânsito (min engarrafados / min monitorados)'] = pivot_jps['JamDateStart'] / total_observations
+    pivot_jps.reset_index(inplace=True)
+    pivot_jps.set_index("SctnId", inplace=True)
+    pivot_jps.drop(["JamDateStart", "JamSpdMetersPerSecond"], axis=1, inplace=True)
+    pivot_jps.rename(columns={'JamSpdKmPerHour': 'Velocidade média (km/h)',
                               'JamIndLevelOfTraffic': 'Nivel médio (0 a 5)',
                               'JamIndLevelOfTrafficSqrd': 'Nivel quadrático médio (0 a 25)',
-                              'TrchQtdComprimento': "Comprimento do trecho (m)",
+                              'SctnQtdComprimento': "Comprimento do section (m)",
                               'JamQtdLengthMeters': "Comprimento médio de fila (m)",
                               'JamTimeDelayInSeconds': "Atraso médio (s)",
-                              'TrchDscNome': "Rua",
+                              'SctnDscNome': "Rua",
                               'ClfuDscClassFunc': "Classificação Funcional"}, inplace=True)
     #Show
     cols = ["Rua",
@@ -252,17 +252,20 @@ def gen_pivot_table(df_jpt, total_observations):
             "Nivel médio (0 a 5)",
             "Nivel quadrático médio (0 a 25)",
             "Velocidade média (km/h)",
-            "Comprimento do trecho (m)",
-            "TrchDscCoordxUtmComeco",
-            "TrchDscCoordyUtmComeco",
+            "Comprimento do section (m)",
+            "SctnDscCoordxUtmComeco",
+            "SctnDscCoordyUtmComeco",
             "Classificação Funcional"]
-    pivot_jpt = pivot_jpt[cols]
-    pivot_jpt = pivot_jpt.sort_values("Percentual de trânsito (min engarrafados / min monitorados)", ascending=False)
+    pivot_jps = pivot_jps[cols]
+    pivot_jps = pivot_jps.sort_values("Percentual de trânsito (min engarrafados / min monitorados)", ascending=False)
     
-    return pivot_jpt
+    return pivot_jps
 
 def get_direction(coord_list):
-    num_coords = len(coord_list)
+    try:
+      num_coords = len(coord_list)
+    except:
+      return pd.Series([None, None])
     
     #North/South
     y_start = coord_list[0]["y"]
@@ -281,3 +284,6 @@ def get_direction(coord_list):
         lon_direction = "Oeste"
         
     return pd.Series([lon_direction, lat_direction])
+
+def adjust_for_dst()
+    pass

@@ -21,12 +21,12 @@ dotenv.load_dotenv(dotenv_path)
 
 #Connection and initial setup
 DATABASE = {
-    'drivername': os.environ.get("test_db_drivername"),
-    'host': os.environ.get("test_db_host"), 
-    'port': os.environ.get("test_db_port"),
-    'username': os.environ.get("test_db_username"),
-    'password': os.environ.get("test_db_password"),
-    'database': os.environ.get("test_db_database"),
+    'drivername': os.environ.get("db_drivername"),
+    'host': os.environ.get("db_host"), 
+    'port': os.environ.get("db_port"),
+    'username': os.environ.get("db_username"),
+    'password': os.environ.get("db_password"),
+    'database': os.environ.get("db_database"),
 }
 
 db_url = URL(**DATABASE)

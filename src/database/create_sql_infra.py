@@ -21,12 +21,12 @@ dotenv.load_dotenv(dotenv_path)
 
 #Connection and initial setup
 DATABASE = {
-    'drivername': os.environ.get("test_db_drivername"),
-    'host': os.environ.get("test_db_host"), 
-    'port': os.environ.get("test_db_port"),
-    'username': os.environ.get("test_db_username"),
-    'password': os.environ.get("test_db_password"),
-    'database': os.environ.get("test_db_database"),
+    'drivername': os.environ.get("db_drivername"),
+    'host': os.environ.get("db_host"), 
+    'port': os.environ.get("db_port"),
+    'username': os.environ.get("db_username"),
+    'password': os.environ.get("db_password"),
+    'database': os.environ.get("db_database"),
 }
 
 db_url = URL(**DATABASE)
@@ -34,23 +34,23 @@ engine = create_engine(db_url)
 Base = declarative_base()
 meta = MetaData()
 meta.bind = engine
-meta.reflect()
 
-class Trecho(Base):
-    __tablename__ = "Trecho"
+
+class Section(Base):
+    __tablename__ = "Section"
     
-    id = Column("TrchId", Integer, primary_key=True)
-    arcgisId = Column("TrchIdArcgis", Integer)
-    codLogr = Column("TrchCodRua", Integer)
-    nomLogr = Column("TrchDscNome", Unicode)
-    metrica = Column("TrchQtdMetrosAcumulados", Integer)
-    comprimento = Column("TrchQtdComprimento", Float)
-    xCom = Column("TrchDscCoordxUtmComeco", Float)
-    yCom = Column("TrchDscCoordyUtmComeco", Float)
-    xMeio = Column("TrchDscCoordxUtmMeio", Float)
-    yMeio = Column("TrchDscCoordyUtmMeio", Float)
-    xFinal = Column("TrchDscCoordxUtmFinal", Float)
-    yFinal = Column("TrchDscCoordyUtmFinal", Float)
+    id = Column("SctnId", Integer, primary_key=True)
+    arcgisId = Column("SctnIdArcgis", Integer)
+    codLogr = Column("SctnCodRua", Integer)
+    nomLogr = Column("SctnDscNome", Unicode)
+    metrica = Column("SctnQtdMetrosAcumulados", Integer)
+    comprimento = Column("SctnQtdComprimento", Float)
+    xCom = Column("SctnDscCoordxUtmComeco", Float)
+    yCom = Column("SctnDscCoordyUtmComeco", Float)
+    xMeio = Column("SctnDscCoordxUtmMeio", Float)
+    yMeio = Column("SctnDscCoordyUtmMeio", Float)
+    xFinal = Column("SctnDscCoordxUtmFinal", Float)
+    yFinal = Column("SctnDscCoordyUtmFinal", Float)
 
 class MongoRecord(Base):
     __tablename__ = "MongoRecord"
@@ -88,43 +88,43 @@ class Jam(Base):
     
     __table_args__ = (UniqueConstraint("JamDateStart", "JamUuid", name="JamDateUuid"),)
 
-class JamPerTrecho(Base):
-    __tablename__ = "JamPerTrecho"
+class JamPerSection(Base):
+    __tablename__ = "JamPerSection"
     
-    id = Column("JptId", Integer, primary_key=True)
+    id = Column("JpsId", Integer, primary_key=True)
     JamDateStart = Column("JamDateStart", DateTime, nullable=False)
     JamUuid = Column("JamUuid", Integer, nullable=False) 
-    TrchId = Column("TrchId", Integer, ForeignKey("Trecho.TrchId"), nullable=False)
+    SctnId = Column("SctnId", Integer, ForeignKey("Section.SctnId", ondelete="CASCADE"), nullable=False)
     
     __table_args__ = (ForeignKeyConstraint([JamDateStart, JamUuid],
                                            ["Jam.JamDateStart", "Jam.JamUuid"],
                                            ondelete="CASCADE"),
-                      UniqueConstraint("JamDateStart", "JamUuid", "TrchId", name="trecho_engarrafado"),
+                      UniqueConstraint("JamDateStart", "JamUuid", "SctnId", name="jammed_section"),
                       {})
 
 Base.metadata.create_all(engine)
 
-df_trechos = pd.read_csv(project_dir + "/data/external/sepud_logradouros.csv", decimal=",")
+df_sections = pd.read_csv(project_dir + "/data/external/sepud_logradouros.csv", decimal=",")
 
-columns = {"objectid,N,10,0": "TrchIdArcgis",
-          "codlogra,N,10,0": "TrchCodRua",
-          "nomelog,C,254": "TrchDscNome",
-          "acumulo,N,10,0": "TrchQtdMetrosAcumulados",
-          "st_length_,N,19,11": "TrchQtdComprimento",
-          "Coord_x,N,19,11": "TrchDscCoordxUtmComeco",
-          "coord_y,N,19,11": "TrchDscCoordyUtmComeco",
-          "Cood_x_m,N,19,11": "TrchDscCoordxUtmMeio",
-          "Coord_y_m,N,19,11": "TrchDscCoordyUtmMeio",
-          "coord_x_f,N,19,11": "TrchDscCoordxUtmFinal",
-          "coord_y_f,N,19,11": "TrchDscCoordyUtmFinal",
+columns = {"objectid,N,10,0": "SctnIdArcgis",
+          "codlogra,N,10,0": "SctnCodRua",
+          "nomelog,C,254": "SctnDscNome",
+          "acumulo,N,10,0": "SctnQtdMetrosAcumulados",
+          "st_length_,N,19,11": "SctnQtdComprimento",
+          "Coord_x,N,19,11": "SctnDscCoordxUtmComeco",
+          "coord_y,N,19,11": "SctnDscCoordyUtmComeco",
+          "Cood_x_m,N,19,11": "SctnDscCoordxUtmMeio",
+          "Coord_y_m,N,19,11": "SctnDscCoordyUtmMeio",
+          "coord_x_f,N,19,11": "SctnDscCoordxUtmFinal",
+          "coord_y_f,N,19,11": "SctnDscCoordyUtmFinal",
           }
 
-df_trechos.rename(columns=columns, inplace=True)
+df_sections.rename(columns=columns, inplace=True)
 
 cols = [v for k, v in columns.items() ]
-df_trechos = df_trechos[cols]
+df_sections = df_sections[cols]
 
-#Pedir confirmação do usuário antes de implementar a função
-trecho = meta.tables["Trecho"]
-trecho.delete().execute()
-df_trechos.to_sql("Trecho", meta.bind, if_exists="append", index_label="TrchId")
+meta.reflect()
+section = meta.tables["Section"]
+section.delete().execute()
+df_sections.to_sql("Section", meta.bind, if_exists="append", index_label="SctnId")
