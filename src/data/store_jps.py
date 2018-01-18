@@ -5,11 +5,13 @@ sys.path.append(project_dir)
 
 import dotenv
 import geopandas as gpd
+import pandas as pd
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine.url import URL
 from sqlalchemy import MetaData
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.types import TIMESTAMP as typeTIMESTAMP
 
 from src.data.processing_func import (build_geo_jams, build_geo_sections)
 
@@ -39,7 +41,8 @@ geo_sections = build_geo_sections(meta)
 
 #Build and store JamPerSection
 jams_per_section = gpd.sjoin(geo_jams, geo_sections, how="inner", op="contains")
-jams_per_section = jams_per_section[["JamDateStart", "JamUuid", "SctnId"]]
-jpt = meta.tables["JamPerSection"]
-jpt.delete().execute()
+jams_per_section = jams_per_section[["JamDateStart", "JamUuid", "SctnId"]]	
+jams_per_section["JamDateStart"] = jams_per_section["JamDateStart"].astype(pd.Timestamp)
+jps = meta.tables["JamPerSection"]
+jps.delete().execute()
 jams_per_section.to_sql("JamPerSection", con=meta.bind, if_exists="append", index=False)

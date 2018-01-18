@@ -36,11 +36,13 @@ meta.reflect()
 
 date_begin = datetime.date(day=1, month=11, year=2017)
 date_end = datetime.date(day=15, month=1, year=2018)
-morn_start = 9
-morn_end = 11
-aft_start = 19
-aft_end = 21
+morn_start = 7
+morn_end = 9
+aft_start = 17
+aft_end = 19
 
 df = gen_jps_dataset(meta, date_begin, date_end, morn_start, morn_end,
                     aft_start, aft_end, weekends=True, summary=True)
+
+
 

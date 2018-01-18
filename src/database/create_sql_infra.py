@@ -56,8 +56,8 @@ class MongoRecord(Base):
     __tablename__ = "MongoRecord"
     
     id = Column("MgrcId", Integer, primary_key=True)
-    dateStart = Column("MgrcDateStart", DateTime)
-    dateEnd = Column("MgrcDateEnd", DateTime)
+    dateStart = Column("MgrcDateStart", DateTime(timezone=True))
+    dateEnd = Column("MgrcDateEnd", DateTime(timezone=True))
     
     __table_args__ = (UniqueConstraint("MgrcDateStart", name="startDate_record"),
                       UniqueConstraint("MgrcDateEnd", name="endDate_record"),
@@ -68,9 +68,9 @@ class Jam(Base):
     
     id = Column("JamId", Integer, primary_key=True)
     object_id = Column("JamObjectId", Unicode)
-    dateStart = Column("JamDateStart", DateTime,
+    dateStart = Column("JamDateStart", DateTime(timezone=True),
                        ForeignKey("MongoRecord.MgrcDateStart", ondelete="CASCADE"), nullable=False)
-    dateEnd = Column("JamDateEnd", DateTime)
+    dateEnd = Column("JamDateEnd", DateTime(timezone=True))
     city = Column("JamDscCity", Unicode)
     coords = Column("JamDscCoordinatesLonLat", typeJSON)
     roadType = Column("JamDscRoadType", Integer)
@@ -92,7 +92,7 @@ class JamPerSection(Base):
     __tablename__ = "JamPerSection"
     
     id = Column("JpsId", Integer, primary_key=True)
-    JamDateStart = Column("JamDateStart", DateTime, nullable=False)
+    JamDateStart = Column("JamDateStart", DateTime(timezone=True), nullable=False)
     JamUuid = Column("JamUuid", Integer, nullable=False) 
     SctnId = Column("SctnId", Integer, ForeignKey("Section.SctnId", ondelete="CASCADE"), nullable=False)
     

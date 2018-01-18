@@ -54,14 +54,22 @@ def gen_df_jps(meta, date_begin, date_end, morn_start=None, morn_end=None,
                   where(mongo_record.c.MgrcDateStart.between(date_begin, date_end)).\
                   where(extract("isodow", mongo_record.c.MgrcDateStart).in_(week))
 
+      #query = query.where(or_(extract("hour", mongo_record.c.MgrcDateStart).between(morn_start, morn_end),
+      #                extract("hour", mongo_record.c.MgrcDateStart).between(aft_start, aft_end)))
+
+  df_jps = pd.read_sql(query, meta.bind)
+
   if (bool(morn_start) != bool(morn_end)) or (bool(aft_start) != bool(aft_end)):
       raise Exception("Both start and end times must be provided")
   elif morn_start or aft_start:
-      query = query.where(or_(extract("hour", mongo_record.c.MgrcDateStart).between(morn_start, morn_end),
-                      extract("hour", mongo_record.c.MgrcDateStart).between(aft_start, aft_end)))
+      df_jps["MgrcDateStart"] = df_jps["MgrcDateStart"].tz_convert("America/Sao_Paulo")
+      df_jps = df_jps[((df_jps["MgrcDateStart"].dt.time > morn_start) & ("MgrcDateStart"].dt.time < morn_end)) |
+                      ((df_jps["MgrcDateStart"].dt.time > morn_start) & ("MgrcDateStart"].dt.time < morn_end))
+      ]
 
 
-  df_jps = pd.read_sql(query, meta.bind)
+
+
   df_jps[["LonDirection","LatDirection"]] = df_jps["JamDscCoordinatesLonLat"].apply(get_direction)
 
   end = time.time()

@@ -284,6 +284,3 @@ def get_direction(coord_list):
         lon_direction = "Oeste"
         
     return pd.Series([lon_direction, lat_direction])
-
-def adjust_for_dst()
-    pass
