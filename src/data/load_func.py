@@ -8,7 +8,7 @@ import time
 import pandas as pd
 import geopandas as gpd
 from sqlalchemy import extract, select
-from sqlalchemy.sql import or_
+from sqlalchemy.sql import or_, and_
 import datetime
 
 from src.data.processing_func import (get_direction)
@@ -17,19 +17,13 @@ dotenv_path = os.path.join(project_dir, '.env')
 dotenv.load_dotenv(dotenv_path)
 
 
-def gen_df_jps(meta, date_begin, date_end, morn_start=None, morn_end=None,
-                    aft_start=None, aft_end=None, weekends=False, summary=False):
+def gen_df_jps(meta, date_begin, date_end, periods=None, weekends=False, summary=False):
   start = time.time()
 
   jps = meta.tables["JamPerSection"]
   jam = meta.tables["Jam"]
   sctn = meta.tables["Section"]
   mongo_record = meta.tables["MongoRecord"]
-
-  if weekends:
-      week = [1,2,3,4,5,6,7]
-  else:
-      week = [1,2,3,4,5]
 
   query = select([mongo_record.c.MgrcDateStart,
                   jps.c.JpsId,
@@ -51,29 +45,24 @@ def gen_df_jps(meta, date_begin, date_end, morn_start=None, morn_end=None,
                   sctn.c.SctnDscCoordxUtmFinal,
                   sctn.c.SctnDscCoordyUtmFinal]).\
                   select_from(mongo_record.join(jam.join(jps).join(sctn), isouter=True)).\
-                  where(mongo_record.c.MgrcDateStart.between(date_begin, date_end)).\
-                  where(extract("isodow", mongo_record.c.MgrcDateStart).in_(week))
+                  where(mongo_record.c.MgrcDateStart.between(date_begin, date_end))
 
-      #query = query.where(or_(extract("hour", mongo_record.c.MgrcDateStart).between(morn_start, morn_end),
-      #                extract("hour", mongo_record.c.MgrcDateStart).between(aft_start, aft_end)))
+  if not weekends:
+    query = query.where(extract("isodow", mongo_record.c.MgrcDateStart).in_(list(range(1,5))))
 
-  df_jps = pd.read_sql(query, meta.bind)
-
-  if (bool(morn_start) != bool(morn_end)) or (bool(aft_start) != bool(aft_end)):
-      raise Exception("Both start and end times must be provided")
-  elif morn_start or aft_start:
-      df_jps["MgrcDateStart"] = df_jps["MgrcDateStart"].tz_convert("America/Sao_Paulo")
-      df_jps = df_jps[((df_jps["MgrcDateStart"].dt.time > morn_start) & ("MgrcDateStart"].dt.time < morn_end)) |
-                      ((df_jps["MgrcDateStart"].dt.time > morn_start) & ("MgrcDateStart"].dt.time < morn_end))
-      ]
-
-
-
-
+  or_list=[]
+  for t in periods:
+    or_list.append(and_(extract("hour", mongo_record.c.MgrcDateStart)>=t[0],
+                        extract("hour", mongo_record.c.MgrcDateStart)<t[1]
+                        )
+                  )
+  query = query.where(or_(*or_list))
+  df_jps = pd.read_sql(query, meta.bind)  
   df_jps[["LonDirection","LatDirection"]] = df_jps["JamDscCoordinatesLonLat"].apply(get_direction)
-
+  df_jps["MgrcDateStart"] = df_jps["MgrcDateStart"].dt.tz_convert("America/Sao_Paulo")
   end = time.time()
-  processing_time = end - start
+
+  processing_time = round(end - start)
 
   if summary:
     minutos_engarrafados = df_jps["JamId"].nunique()
@@ -86,7 +75,7 @@ def gen_df_jps(meta, date_begin, date_end, morn_start=None, morn_end=None,
     print("Número de trechos abrangidos: " + str(n_trechos))
     columns = {"SctnDscNome": "Rua",
                "SctnId": "Section",
-               "MgrcDateStart": "Data (GMT-3)",
+               "MgrcDateStart": "Data (Horario Brasília)",
                "JamQtdLengthMeters": "Comprimento da fila (m)",
                "JamSpdMetersPerSecond": "Velocidade (km/h)",
                "JamTimeDelayInSeconds": "Atraso (s)",
@@ -95,14 +84,14 @@ def gen_df_jps(meta, date_begin, date_end, morn_start=None, morn_end=None,
 
     df_jps_toshow = df_jps.rename(columns=columns)
     df_jps_toshow["Velocidade (km/h)"] = df_jps_toshow["Velocidade (km/h)"]*3.6
-    df_jps_toshow[[c for c in columns.values()]].sample(7).sort_values("Data (GMT-3)", ascending=False)
+    df_jps_toshow[[c for c in columns.values()]].sample(7).sort_values("Data (Horario Brasília)", ascending=False)
 
   return df_jps
 
-  def gen_df_features(df_jps):
-    df["date"] = df["JamDateStart"].dt.date
-    df["hour"] = df["JamDateStart"].dt.hour-2
-    #df_jpt_trecho["hour"] = df_jpt_trecho.apply(lambda x: aplicar_horario_verao(x["date"], x["hour"]), axis=1)
-    df["minute"] = df["JamDateStart"].dt.minute
-    df["period"] = np.sign(df["hour"]-12)
-    df = df[~df["JamDateStart"].dt.date.isin(feriados)]
+def gen_df_features(df_jps):
+  df["date"] = df["JamDateStart"].dt.date
+  df["hour"] = df["JamDateStart"].dt.hour-2
+  #df_jpt_trecho["hour"] = df_jpt_trecho.apply(lambda x: aplicar_horario_verao(x["date"], x["hour"]), axis=1)
+  df["minute"] = df["JamDateStart"].dt.minute
+  df["period"] = np.sign(df["hour"]-12)
+  df = df[~df["JamDateStart"].dt.date.isin(feriados)]
