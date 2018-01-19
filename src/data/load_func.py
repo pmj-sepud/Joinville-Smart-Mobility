@@ -1,21 +1,13 @@
-import os
-import sys
-project_dir = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-sys.path.append(project_dir)
-
-import dotenv
 import time
 import pandas as pd
 import geopandas as gpd
+import numpy as np
 from sqlalchemy import extract, select
 from sqlalchemy.sql import or_, and_
 import datetime
+from shapely.geometry import Point
 
-from src.data.processing_func import (get_direction)
-
-dotenv_path = os.path.join(project_dir, '.env')
-dotenv.load_dotenv(dotenv_path)
-
+from src.data.processing_func import (get_direction, build_geo_sections)
 
 def gen_df_jps(meta, date_begin, date_end, periods=None, weekends=False, summary=False):
   start = time.time()
@@ -57,7 +49,7 @@ def gen_df_jps(meta, date_begin, date_end, periods=None, weekends=False, summary
                         )
                   )
   query = query.where(or_(*or_list))
-  df_jps = pd.read_sql(query, meta.bind)  
+  df_jps = pd.read_sql(query, meta.bind)
   df_jps[["LonDirection","LatDirection"]] = df_jps["JamDscCoordinatesLonLat"].apply(get_direction)
   df_jps["MgrcDateStart"] = df_jps["MgrcDateStart"].dt.tz_convert("America/Sao_Paulo")
   end = time.time()
@@ -88,10 +80,76 @@ def gen_df_jps(meta, date_begin, date_end, periods=None, weekends=False, summary
 
   return df_jps
 
-def gen_df_features(df, feriados):
-  df["date"] = df["JamDateStart"].dt.date
-  df["hour"] = df["JamDateStart"].dt.hour-2
-  #df_jpt_trecho["hour"] = df_jpt_trecho.apply(lambda x: aplicar_horario_verao(x["date"], x["hour"]), axis=1)
-  df["minute"] = df["JamDateStart"].dt.minute
+def gen_df_traffic(df):
+  df["date"] = pd.to_datetime(df["MgrcDateStart"].dt.date)
+  df["hour"] = df["MgrcDateStart"].dt.hour
+  df["minute"] = df["MgrcDateStart"].dt.minute
   df["period"] = np.sign(df["hour"]-12)
-  df = df[~df["JamDateStart"].dt.date.isin(feriados)]
+
+  bins = [0, 14, 29, 44, 59]
+  labels = []
+  for i in range(1,len(bins)):
+    if i==1:
+      labels.append(str(bins[i-1]) + " a " + str(bins[i]))
+    else:
+      labels.append(str(bins[i-1]+1) + " a " + str(bins[i]))
+
+  df['minute_bin'] = pd.cut(df["minute"], bins, labels=labels, include_lowest=True)
+
+  gb = df.groupby(["SctnId", "date", "hour",
+                   "minute_bin", "LonDirection", "LatDirection"]).agg(
+                                                        {"MgrcDateStart": ['count'],
+                                                         "JpsId": ['count'],
+                                                         "JamQtdLengthMeters": ["mean"],
+                                                         "JamSpdMetersPerSecond": ["mean"],
+                                                         "JamTimeDelayInSeconds": ["mean"],
+                                                         "JamIndLevelOfTraffic": ["mean"],
+                                                        })
+  gb.columns = ['_'.join(col).strip() for col in gb.columns.values]
+  gb["JamSpdKmPerHour_mean"] = gb["JamSpdMetersPerSecond_mean"]*3.6
+  gb["Percentual de trânsito (min engarrafados / min monitorados)"] = gb["JpsId_count"] / gb["MgrcDateStart_count"]
+  colunas = {"MgrcDateStart_count": "Total de sinais do Waze",
+             "JpsId_count": "Engarrafamentos registrados",
+             "Percentual de trânsito (min engarrafados / min monitorados)":"Percentual de trânsito (min engarrafados / min monitorados)",
+             "JamSpdKmPerHour_mean": "Velocidade Média (km/h)",
+             "JamQtdLengthMeters_mean": "Fila média (m)",
+             "JamTimeDelayInSeconds_mean": "Atraso médio (s)",
+             "JamIndLevelOfTraffic_mean": "Nível médio de congestionamento (0 a 5)"
+            }
+
+  gb.rename(columns=colunas, inplace=True)
+  gb = gb[[col for col in colunas.values()]]
+
+  return gb
+
+def gen_df_fluxos(meta, path_fluxos):
+  
+  geo_sections = build_geo_sections(meta)
+
+  df_fluxos = pd.read_excel(path_fluxos)
+  df_fluxos.dropna(subset=["Latitude", "Longitude"], inplace=True)
+  df_fluxos["fluxo_Point"] = df_fluxos.apply(lambda x: Point(x["Longitude"], x["Latitude"]), axis=1)
+  direction = {"N": "North",
+            "S": "South",
+            "Norte": "North",
+            "Sul": "South",
+            "L": "East",
+            "O": "West",
+            "Leste": "East",
+            "Oeste": "West",}
+  df_fluxos["Direction"] = df_fluxos["Sentido"].str.split("/", 1).str.get(1).map(direction)
+  df_fluxos["date"] = pd.to_datetime(df_fluxos["Data"], dayfirst=True)
+  
+  geo_fluxos = gpd.GeoDataFrame(df_fluxos, crs={'init': 'epsg:4326'}, geometry="fluxo_Point")
+  geo_fluxos = gpd.sjoin(geo_fluxos, geo_sections, how="left", op="within")
+  geo_fluxos["hour"] = geo_fluxos["Horario"].str[:2].astype(int)
+  geo_fluxos["minute_bin"] = geo_fluxos["Horario"].str[3:5] + " a " + geo_fluxos["Horario"].str[12:14]
+  geo_fluxos["minute_bin"] = geo_fluxos["minute_bin"].str.replace("00", "0")
+  geo_fluxos.set_index(["SctnId", "date", "hour", "minute_bin", "Direction"], inplace=True)
+  columns = ['Endereco', 'Sentido', 'Equipamento', '00 a 10',
+             '11 a 20', '21 a 30', '31 a 40', '41 a 50', '51 a 60', '61 a 70',
+             '71 a 80', '81 a 90', '91 a 100', 'Acima de 100', 'Total',
+            ]
+  geo_fluxos = geo_fluxos[columns]
+  
+  return geo_fluxos

@@ -271,16 +271,16 @@ def get_direction(coord_list):
     y_start = coord_list[0]["y"]
     y_end = coord_list[num_coords-1]["y"]
     if (y_end-y_start) >= 0:
-        lat_direction = "Norte"
+        lat_direction = "North"
     else:
-        lat_direction = "Sul"
+        lat_direction = "South"
         
     #East/West
     x_start = coord_list[0]["x"]
     x_end = coord_list[num_coords-1]["x"]
     if (x_end-x_start) >= 0:
-        lon_direction = "Leste"
+        lon_direction = "East"
     else:
-        lon_direction = "Oeste"
+        lon_direction = "West"
         
     return pd.Series([lon_direction, lat_direction])
