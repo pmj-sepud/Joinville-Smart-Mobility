@@ -88,7 +88,7 @@ def gen_df_jps(meta, date_begin, date_end, periods=None, weekends=False, summary
 
   return df_jps
 
-def gen_df_features(df_jps):
+def gen_df_features(df, feriados):
   df["date"] = df["JamDateStart"].dt.date
   df["hour"] = df["JamDateStart"].dt.hour-2
   #df_jpt_trecho["hour"] = df_jpt_trecho.apply(lambda x: aplicar_horario_verao(x["date"], x["hour"]), axis=1)

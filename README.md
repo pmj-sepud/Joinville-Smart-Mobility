@@ -1,7 +1,7 @@
 smartmobpub
 ==============================
 
-Analise dos dados doa geracao de inteligencia de mobilidade.
+Data-cleaning pipeline and subsequent analyses for Waze CCP data.
 
 Project Organization
 ------------

@@ -41,5 +41,5 @@ date_end = datetime.date(day=15, month=1, year=2018)
 
 df_jps = gen_df_jps(meta, date_begin, date_end, periods=[(7,9), (17,19)], weekends=True, summary=True)
 
-
+feriados = []
 
