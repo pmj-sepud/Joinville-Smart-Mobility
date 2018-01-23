@@ -42,13 +42,15 @@ def gen_df_jps(meta, date_begin, date_end, periods=None, weekends=False, summary
   if not weekends:
     query = query.where(extract("isodow", mongo_record.c.MgrcDateStart).in_(list(range(1,5))))
 
-  or_list=[]
-  for t in periods:
-    or_list.append(and_(extract("hour", mongo_record.c.MgrcDateStart)>=t[0],
-                        extract("hour", mongo_record.c.MgrcDateStart)<t[1]
-                        )
-                  )
-  query = query.where(or_(*or_list))
+  if periods:
+    or_list=[]
+    for t in periods:
+      or_list.append(and_(extract("hour", mongo_record.c.MgrcDateStart)>=t[0],
+                          extract("hour", mongo_record.c.MgrcDateStart)<t[1]
+                          )
+                    )
+    query = query.where(or_(*or_list))
+
   df_jps = pd.read_sql(query, meta.bind)
   df_jps[["LonDirection","LatDirection"]] = df_jps["JamDscCoordinatesLonLat"].apply(get_direction)
   df_jps["MgrcDateStart"] = df_jps["MgrcDateStart"].dt.tz_convert("America/Sao_Paulo")
@@ -80,7 +82,7 @@ def gen_df_jps(meta, date_begin, date_end, periods=None, weekends=False, summary
 
   return df_jps
 
-def gen_df_traffic(df):
+def gen_df_features(df):
   df["date"] = pd.to_datetime(df["MgrcDateStart"].dt.date)
   df["hour"] = df["MgrcDateStart"].dt.hour
   df["minute"] = df["MgrcDateStart"].dt.minute
@@ -98,20 +100,14 @@ def gen_df_traffic(df):
 
   gb = df.groupby(["SctnId", "date", "hour",
                    "minute_bin", "LonDirection", "LatDirection"]).agg(
-                                                        {"MgrcDateStart": ['count'],
-                                                         "JpsId": ['count'],
-                                                         "JamQtdLengthMeters": ["mean"],
+                                                        {"JamQtdLengthMeters": ["mean"],
                                                          "JamSpdMetersPerSecond": ["mean"],
                                                          "JamTimeDelayInSeconds": ["mean"],
                                                          "JamIndLevelOfTraffic": ["mean"],
                                                         })
   gb.columns = ['_'.join(col).strip() for col in gb.columns.values]
   gb["JamSpdKmPerHour_mean"] = gb["JamSpdMetersPerSecond_mean"]*3.6
-  gb["Percentual de trânsito (min engarrafados / min monitorados)"] = gb["JpsId_count"] / gb["MgrcDateStart_count"]
-  colunas = {"MgrcDateStart_count": "Total de sinais do Waze",
-             "JpsId_count": "Engarrafamentos registrados",
-             "Percentual de trânsito (min engarrafados / min monitorados)":"Percentual de trânsito (min engarrafados / min monitorados)",
-             "JamSpdKmPerHour_mean": "Velocidade Média (km/h)",
+  colunas = {"JamSpdKmPerHour_mean": "Velocidade Média (km/h)",
              "JamQtdLengthMeters_mean": "Fila média (m)",
              "JamTimeDelayInSeconds_mean": "Atraso médio (s)",
              "JamIndLevelOfTraffic_mean": "Nível médio de congestionamento (0 a 5)"
@@ -146,7 +142,7 @@ def gen_df_fluxos(meta, path_fluxos):
   geo_fluxos["minute_bin"] = geo_fluxos["Horario"].str[3:5] + " a " + geo_fluxos["Horario"].str[12:14]
   geo_fluxos["minute_bin"] = geo_fluxos["minute_bin"].str.replace("00", "0")
   geo_fluxos.set_index(["SctnId", "date", "hour", "minute_bin", "Direction"], inplace=True)
-  columns = ['Endereco', 'Sentido', 'Equipamento', '00 a 10',
+  columns = ['Endereco', 'Corredor', 'Ciclofaixa', 'Numero de faixas', 'Sentido', 'Equipamento', '00 a 10',
              '11 a 20', '21 a 30', '31 a 40', '41 a 50', '51 a 60', '61 a 70',
              '71 a 80', '81 a 90', '91 a 100', 'Acima de 100', 'Total',
             ]

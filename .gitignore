@@ -75,6 +75,7 @@ output.log
 
 # Jupyter NB Checkpoints
 .ipynb_checkpoints/
+/notebooks/exploratory
 
 # exclude data from source control by default
 /data/
