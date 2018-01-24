@@ -7,9 +7,9 @@ from sqlalchemy.sql import or_, and_
 import datetime
 from shapely.geometry import Point
 
-from src.data.processing_func import (get_direction, build_geo_sections)
+from src.data.processing_func import (get_direction, extract_geo_sections)
 
-def gen_df_jps(meta, date_begin, date_end, periods=None, weekends=False, summary=False):
+def extract_jps(meta, date_begin, date_end, periods=None, weekends=False, summary=False):
   start = time.time()
 
   jps = meta.tables["JamPerSection"]
@@ -82,7 +82,7 @@ def gen_df_jps(meta, date_begin, date_end, periods=None, weekends=False, summary
 
   return df_jps
 
-def gen_df_features(df):
+def transf_flow_features(df):
   df["date"] = pd.to_datetime(df["MgrcDateStart"].dt.date)
   df["hour"] = df["MgrcDateStart"].dt.hour
   df["minute"] = df["MgrcDateStart"].dt.minute
@@ -98,29 +98,29 @@ def gen_df_features(df):
 
   df['minute_bin'] = pd.cut(df["minute"], bins, labels=labels, include_lowest=True)
 
-  gb = df.groupby(["SctnId", "date", "hour",
+  df_flow_features = df.groupby(["SctnId", "date", "hour",
                    "minute_bin", "LonDirection", "LatDirection"]).agg(
                                                         {"JamQtdLengthMeters": ["mean"],
                                                          "JamSpdMetersPerSecond": ["mean"],
                                                          "JamTimeDelayInSeconds": ["mean"],
                                                          "JamIndLevelOfTraffic": ["mean"],
                                                         })
-  gb.columns = ['_'.join(col).strip() for col in gb.columns.values]
-  gb["JamSpdKmPerHour_mean"] = gb["JamSpdMetersPerSecond_mean"]*3.6
+  df_flow_features.columns = ['_'.join(col).strip() for col in df_flow_features.columns.values]
+  df_flow_features["JamSpdKmPerHour_mean"] = df_flow_features["JamSpdMetersPerSecond_mean"]*3.6
   colunas = {"JamSpdKmPerHour_mean": "Velocidade Média (km/h)",
              "JamQtdLengthMeters_mean": "Fila média (m)",
              "JamTimeDelayInSeconds_mean": "Atraso médio (s)",
              "JamIndLevelOfTraffic_mean": "Nível médio de congestionamento (0 a 5)"
             }
 
-  gb.rename(columns=colunas, inplace=True)
-  gb = gb[[col for col in colunas.values()]]
+  df_flow_features.rename(columns=colunas, inplace=True)
+  df_flow_features = df_flow_features[[col for col in colunas.values()]]
 
-  return gb
+  return df_flow_features
 
-def gen_df_fluxos(meta, path_fluxos):
+def transf_flow_labels(meta, path_fluxos):
   
-  geo_sections = build_geo_sections(meta)
+  geo_sections = extract_geo_sections(meta)
 
   df_fluxos = pd.read_excel(path_fluxos)
   df_fluxos.dropna(subset=["Latitude", "Longitude"], inplace=True)
@@ -137,15 +137,15 @@ def gen_df_fluxos(meta, path_fluxos):
   df_fluxos["date"] = pd.to_datetime(df_fluxos["Data"], dayfirst=True)
   
   geo_fluxos = gpd.GeoDataFrame(df_fluxos, crs={'init': 'epsg:4326'}, geometry="fluxo_Point")
-  geo_fluxos = gpd.sjoin(geo_fluxos, geo_sections, how="left", op="within")
-  geo_fluxos["hour"] = geo_fluxos["Horario"].str[:2].astype(int)
-  geo_fluxos["minute_bin"] = geo_fluxos["Horario"].str[3:5] + " a " + geo_fluxos["Horario"].str[12:14]
-  geo_fluxos["minute_bin"] = geo_fluxos["minute_bin"].str.replace("00", "0")
-  geo_fluxos.set_index(["SctnId", "date", "hour", "minute_bin", "Direction"], inplace=True)
+  df_flow_labels = gpd.sjoin(geo_fluxos, geo_sections, how="left", op="within")
+  df_flow_labels["hour"] = df_flow_labels["Horario"].str[:2].astype(int)
+  df_flow_labels["minute_bin"] = df_flow_labels["Horario"].str[3:5] + " a " + df_flow_labels["Horario"].str[12:14]
+  df_flow_labels["minute_bin"] = df_flow_labels["minute_bin"].str.replace("00", "0")
+  df_flow_labels.set_index(["SctnId", "date", "hour", "minute_bin", "Direction"], inplace=True)
   columns = ['Endereco', 'Corredor', 'Ciclofaixa', 'Numero de faixas', 'Sentido', 'Equipamento', '00 a 10',
              '11 a 20', '21 a 30', '31 a 40', '41 a 50', '51 a 60', '61 a 70',
              '71 a 80', '81 a 90', '91 a 100', 'Acima de 100', 'Total',
             ]
-  geo_fluxos = geo_fluxos[columns]
+  df_flow_labels = df_flow_labels[columns]
   
-  return geo_fluxos
+  return df_flow_labels

@@ -22,6 +22,15 @@ def tabulate_records(records):
     raw_data['startTime'] = pd.to_datetime(raw_data['startTime'].str[:-4])
     raw_data['endTime'] = pd.to_datetime(raw_data['endTime'].str[:-4])
 
+    raw_data['startTime'] = raw_data['startTime'].dt.tz_localize("UTC")
+    raw_data['endTime'] = raw_data['endTime'].dt.tz_localize("UTC")
+
+    raw_data['startTime'] = raw_data['startTime'].dt.tz_convert("America/Sao_Paulo")
+    raw_data['endTime'] = raw_data['endTime'].dt.tz_convert("America/Sao_Paulo")
+
+    raw_data['startTime'] = raw_data['startTime'].astype(pd.Timestamp)
+    raw_data['endTime'] = raw_data['endTime'].astype(pd.Timestamp)
+
     return raw_data
 
 def prep_rawdata_tosql(raw_data):
@@ -131,7 +140,7 @@ def UTM_to_lon_lat(l):
         
     return list_of_coordinates
 
-def build_geo_sections(meta, buffer=10):
+def extract_geo_sections(meta, buffer=10):
     section = meta.tables['Section']
     sections_query = section.select()
     df_sections = pd.read_sql(sections_query, con=meta.bind)
@@ -150,9 +159,9 @@ def build_geo_sections(meta, buffer=10):
 
     return geo_sections
 
-def build_geo_jams(meta, buffer=20):
+def extract_geo_jams(meta, skip=0, limit=None, buffer=20):
     jam = meta.tables['Jam']
-    jams_query = jam.select()
+    jams_query = jam.select().order_by(jam.c.JamDateStart).offset(skip).limit(limit)
     df_jams = pd.read_sql(jams_query, con=meta.bind)
     df_jams['jams_line_list'] = df_jams['JamDscCoordinatesLonLat'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
     df_jams['jams_line_UTM'] = df_jams['jams_line_list'].apply(lon_lat_to_UTM)
