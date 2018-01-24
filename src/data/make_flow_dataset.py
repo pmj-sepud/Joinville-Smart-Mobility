@@ -36,13 +36,12 @@ meta = MetaData()
 meta.bind = engine
 meta.reflect()
 
-date_begin = datetime.date(day=1, month=11, year=2017)
-date_end = datetime.date(day=15, month=1, year=2018)
+date_begin = datetime.date(day=15, month=10, year=2017)
+date_end = datetime.date(day=20, month=10, year=2017)
 
-#df_jps = gen_df_jps(meta, date_begin, date_end, periods=[(7,9), (17,19)], weekends=True, summary=True)
-df_jps = extract_jps(meta, datetime.date(day=1, month=1, year=2018), date_end, weekends=True, summary=True)
+df_jps = extract_jps(meta, date_begin, date_end, weekends=True, summary=True)
 df_flow_features = transf_flow_features(df_jps)
-path_fluxos = project_dir + "/data/external/fotosensores_Fluxo_veiculos.xlsx"
+path_fluxos = project_dir + "/data/external/fotosensores_Fluxo_veiculos.csv"
 df_flow_labels = transf_flow_labels(meta, path_fluxos)
 
 df_flow_features_NS = df_flow_features.reset_index(level="LonDirection")
@@ -52,20 +51,21 @@ df_flow_features_LW = df_flow_features.reset_index(level="LatDirection")
 df_flow_features_LW.index.rename("Direction", level="LonDirection", inplace=True)
 
 try:
-	df_flow_features_NS = df_flow_features_NS.merge(df_flow_labels, how="inner", left_index=True, right_index=True)
-	df_flow_features_NS.reset_index(inplace=True)
+	df_flow_dataset_NS = df_flow_features_NS.merge(df_flow_labels, how="inner", left_index=True, right_index=True)
+	df_flow_dataset_NS.reset_index(inplace=True)
 except TypeError as e:
 	print(str(e))
 
 try:
-	df_flow_features_LW = df_flow_features_LW.merge(df_flow_labels, how="inner", left_index=True, right_index=True)
-	df_flow_features_LW.reset_index(inplace=True)
+	df_flow_dataset_LW = df_flow_features_LW.merge(df_flow_labels, how="inner", left_index=True, right_index=True)
+	df_flow_dataset_LW.reset_index(inplace=True)
 except TypeError  as e:
 	print(str(e))
 
-if ('flow_dataset_NS' in globals()) & ('flow_dataset_LW' in globals()):
-	flow_dataset = df_flow_features_NS.append(df_flow_features_LW, ignore_index=True)
-elif 'flow_dataset_NS' in globals():
-	df_flow_features_NS.to_csv(project_dir + "/data/processed/flow_dataset.csv")
-elif 'flow_dataset_LW' in globals():
-	df_flow_features_LW.to_csv(project_dir + "/data/processed/flow_dataset.csv")
+if ('df_flow_dataset_NS' in globals()) & ('df_flow_dataset_LW' in globals()):
+	flow_dataset = df_flow_dataset_NS.append(df_flow_dataset_LW, ignore_index=True)
+	flow_dataset.to_csv(project_dir + "/data/processed/flow_dataset.csv")
+elif 'df_flow_dataset_NS' in globals():
+	df_flow_dataset_NS.to_csv(project_dir + "/data/processed/flow_dataset.csv")
+elif 'df_flow_dataset_LW' in globals():
+	df_flow_dataset_LW.to_csv(project_dir + "/data/processed/flow_dataset.csv")

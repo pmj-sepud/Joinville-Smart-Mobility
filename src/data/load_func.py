@@ -1,4 +1,5 @@
 import time
+import numpy as np
 import pandas as pd
 import geopandas as gpd
 import numpy as np
@@ -19,7 +20,6 @@ def extract_jps(meta, date_begin, date_end, periods=None, weekends=False, summar
 
   query = select([mongo_record.c.MgrcDateStart,
                   jps.c.JpsId,
-                  jps.c.JamUuid,
                   jam.c.JamId,
                   jam.c.JamIndLevelOfTraffic,
                   jam.c.JamQtdLengthMeters,
@@ -29,7 +29,6 @@ def extract_jps(meta, date_begin, date_end, periods=None, weekends=False, summar
                   jam.c.JamDscCoordinatesLonLat,
                   sctn.c.SctnId,
                   sctn.c.SctnDscNome,
-                  sctn.c.SctnQtdComprimento,
                   sctn.c.SctnDscCoordxUtmComeco,
                   sctn.c.SctnDscCoordyUtmComeco,
                   sctn.c.SctnDscCoordxUtmMeio,
@@ -122,7 +121,7 @@ def transf_flow_labels(meta, path_fluxos):
   
   geo_sections = extract_geo_sections(meta)
 
-  df_fluxos = pd.read_excel(path_fluxos)
+  df_fluxos = pd.read_csv(path_fluxos, sep=';', decimal=',')
   df_fluxos.dropna(subset=["Latitude", "Longitude"], inplace=True)
   df_fluxos["fluxo_Point"] = df_fluxos.apply(lambda x: Point(x["Longitude"], x["Latitude"]), axis=1)
   direction = {"N": "North",
