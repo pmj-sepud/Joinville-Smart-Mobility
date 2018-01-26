@@ -53,6 +53,20 @@ def extract_jps(meta, date_begin, date_end, periods=None, weekends=False, summar
   df_jps = pd.read_sql(query, meta.bind)
   df_jps[["LonDirection","LatDirection"]] = df_jps["JamDscCoordinatesLonLat"].apply(get_direction)
   df_jps["MgrcDateStart"] = df_jps["MgrcDateStart"].dt.tz_convert("America/Sao_Paulo")
+  df_jps["date"] = pd.to_datetime(df_jps["MgrcDateStart"].dt.date)
+  df_jps["hour"] = df_jps["MgrcDateStart"].dt.hour
+  df_jps["minute"] = df_jps["MgrcDateStart"].dt.minute
+  df_jps["period"] = np.sign(df_jps["hour"]-12)
+
+  bins = [0, 14, 29, 44, 59]
+  labels = []
+  for i in range(1,len(bins)):
+    if i==1:
+      labels.append(str(bins[i-1]) + " a " + str(bins[i]))
+    else:
+      labels.append(str(bins[i-1]+1) + " a " + str(bins[i]))
+
+  df_jps['minute_bin'] = pd.cut(df_jps["minute"], bins, labels=labels, include_lowest=True)
   end = time.time()
 
   processing_time = round(end - start)
@@ -81,23 +95,8 @@ def extract_jps(meta, date_begin, date_end, periods=None, weekends=False, summar
 
   return df_jps
 
-def transf_flow_features(df):
-  df["date"] = pd.to_datetime(df["MgrcDateStart"].dt.date)
-  df["hour"] = df["MgrcDateStart"].dt.hour
-  df["minute"] = df["MgrcDateStart"].dt.minute
-  df["period"] = np.sign(df["hour"]-12)
-
-  bins = [0, 14, 29, 44, 59]
-  labels = []
-  for i in range(1,len(bins)):
-    if i==1:
-      labels.append(str(bins[i-1]) + " a " + str(bins[i]))
-    else:
-      labels.append(str(bins[i-1]+1) + " a " + str(bins[i]))
-
-  df['minute_bin'] = pd.cut(df["minute"], bins, labels=labels, include_lowest=True)
-
-  df_flow_features = df.groupby(["SctnId", "date", "hour",
+def transf_flow_features(df_jps):
+  df_flow_features = df_jps.groupby(["SctnId", "date", "hour",
                    "minute_bin", "LonDirection", "LatDirection"]).agg(
                                                         {"JamQtdLengthMeters": ["mean"],
                                                          "JamSpdMetersPerSecond": ["mean"],
@@ -106,14 +105,14 @@ def transf_flow_features(df):
                                                         })
   df_flow_features.columns = ['_'.join(col).strip() for col in df_flow_features.columns.values]
   df_flow_features["JamSpdKmPerHour_mean"] = df_flow_features["JamSpdMetersPerSecond_mean"]*3.6
-  colunas = {"JamSpdKmPerHour_mean": "Velocidade Média (km/h)",
+  columns = {"JamSpdKmPerHour_mean": "Velocidade Média (km/h)",
              "JamQtdLengthMeters_mean": "Fila média (m)",
              "JamTimeDelayInSeconds_mean": "Atraso médio (s)",
              "JamIndLevelOfTraffic_mean": "Nível médio de congestionamento (0 a 5)"
             }
 
-  df_flow_features.rename(columns=colunas, inplace=True)
-  df_flow_features = df_flow_features[[col for col in colunas.values()]]
+  df_flow_features.rename(columns=columns, inplace=True)
+  df_flow_features = df_flow_features[[col for col in columns.values()]]
 
   return df_flow_features
 
@@ -148,3 +147,56 @@ def transf_flow_labels(meta, path_fluxos):
   df_flow_labels = df_flow_labels[columns]
   
   return df_flow_labels
+
+def transf_traffic_per_timeslot(df_jps, meta, holiday_list):
+  df_jps = df_jps[~df_jps["MgrcDateStart"].dt.date.isin(holiday_list)]
+  wazesignals_per_timeslot = df_jps.groupby(["hour", "minute_bin"]).agg({"MgrcDateStart": pd.Series.nunique})
+
+  jps_per_timeslot = df_jps.groupby(["SctnId", "SctnDscNome", "hour", "minute_bin"]).agg({"JpsId": ['count'],
+                                                             "JamQtdLengthMeters": ["mean"],
+                                                             "JamSpdMetersPerSecond": ["mean"],
+                                                             "JamTimeDelayInSeconds": ["mean"],
+                                                             "JamIndLevelOfTraffic": ["mean"],
+                                                             "period": ["max"],
+                                                             })
+  
+  jps_per_timeslot.reset_index(level=["SctnId", "SctnDscNome"], inplace=True)
+  jps_per_timeslot.columns = [''.join(col_name).strip() for col_name in jps_per_timeslot.columns.values]
+  jps_per_timeslot = jps_per_timeslot.join(wazesignals_per_timeslot, how="outer")
+  jps_per_timeslot["JamSpdKmPerHourmean"] = jps_per_timeslot["JamSpdMetersPerSecondmean"]*3.6
+  jps_per_timeslot["Probabilidade de trânsito (engarrafamentos/sinais)"] = jps_per_timeslot["JpsIdcount"]/\
+                                                                                 jps_per_timeslot["MgrcDateStart"]
+
+  columns = {"MgrcDateStart": "Total de sinais do Waze",
+             "JpsIdcount": "Engarrafamentos registrados",
+             "Probabilidade de trânsito (engarrafamentos/sinais)":"Probabilidade de trânsito (engarrafamentos/sinais)",
+             "JamSpdKmPerHourmean": "Velocidade Média (km/h)",
+             "JamQtdLengthMetersmean": "Fila média (m)",
+             "JamTimeDelayInSecondsmean": "Atraso médio (s)",
+             "JamIndLevelOfTrafficmean": "Nível médio de congestionamento (0 a 5)",
+             "periodmax": "Manha (-1) / Tarde (1)",
+            }
+  jps_per_timeslot.rename(columns=columns, inplace=True)
+
+  geo_sections = extract_geo_sections(meta)
+  jps_per_timeslot.reset_index(inplace=True)
+  geo_jps_per_timeslot = geo_sections.merge(jps_per_timeslot, how="inner", on="SctnId")
+  geo_jps_per_timeslot.set_index(["SctnId", "hour", "minute_bin"], inplace=True)
+  geo_jps_per_timeslot.index.rename(["Codigo SIMGeo", "Hora", "Minuto"], inplace=True)
+
+  col_list = [col for col in columns.values()]
+  col_list.append("section_LineString")
+  geo_jps_per_timeslot = geo_jps_per_timeslot[col_list]
+
+
+  return geo_jps_per_timeslot
+
+def transf_probability_matrix(geo_jps_per_timeslot, sections_interest):
+  sections_interest.columns = sections_interest.columns.str.strip() 
+  sections_interest["geometry"] = sections_interest.apply(
+                                        lambda row: Point(row["Longitude"], row["Latitude"]), axis=1)
+  crs = geo_jps_per_timeslot.crs
+  geo_sections_interest = gpd.GeoDataFrame(sections_interest, crs=crs, geometry="geometry")
+  prob_matrix = gpd.sjoin(geo_sections_interest, geo_jps_per_timeslot, how="left", op="within")
+
+  return prob_matrix

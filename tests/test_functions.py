@@ -1,7 +1,14 @@
 import os
+import sys
+project_dir = os.path.join(os.path.dirname(__file__), os.pardir)
+sys.path.append(project_dir)
+
 import unittest
 import dotenv
 import pandas as pd
+import json
+from io import StringIO
+import pytz
 from sqlalchemy import create_engine, exc, MetaData
 from sqlalchemy.engine.url import URL
 from datetime import datetime, date
@@ -14,12 +21,13 @@ from src.data.processing_func import (collect_records, tabulate_records, json_to
                                 tabulate_jams, lon_lat_to_UTM, UTM_to_lon_lat,
                                 prep_jams_tosql, extract_geo_sections)
 
-dotenv.load_dotenv(".env")
+dotenv_path = os.path.join(project_dir, '.env')
+dotenv.load_dotenv(dotenv_path)
 
 class TestProcessingFunc(unittest.TestCase):
     
     def test_collect_records(self):
-        uri = 
+        uri = os.environ.get("mongo_uri")
         client = MongoClient(uri)
         db = client.ccp
         collection = db.ccp_collection
@@ -34,21 +42,19 @@ class TestProcessingFunc(unittest.TestCase):
         
     def test_tabulate_records(self):
         """
-        1 -
+        1 - Date is in correct timezone
+        2 - 
         """
-        uri = 
-        client = MongoClient(uri)
-        db = client.ccp
-        collection = db.ccp_collection
-        
-        records = collect_records(collection, limit=1) #ideal seria ler um JSON em txt ao invés de pegá-lo da nuvem
+
+        doc = open(project_dir + "/tests/test_data/test_records.txt", "r")
+        json_string = json.load(doc)
+        json_io = StringIO(json_string)
+        records = json.load(json_io)
         raw_data = tabulate_records(records)
-        import pdb
-        pdb.set_trace()
-        
+
         self.assertEqual(type(raw_data), pd.DataFrame)
-        self.assertEqual(raw_data['startTime'].dtype,'datetime64[ns]')
-        self.assertEqual(raw_data['endTime'].dtype,'datetime64[ns]')
+        self.assertEqual(type(raw_data['startTime'][0]), pd.Timestamp)
+        self.assertEqual(raw_data['startTime'][0].tz.zone, pytz.timezone("America/Sao_Paulo").zone)
         self.assertEqual(raw_data['startTimeMillis'].dtype, int)
         self.assertEqual(raw_data['endTimeMillis'].dtype, int)
         if 'jams' in raw_data:
@@ -58,8 +64,11 @@ class TestProcessingFunc(unittest.TestCase):
         if 'irregularities' in raw_data:
             self.assertEqual(raw_data['irregularities'].dtype, dict)
 
-        client.close()
-            
+        doc.close()
+           
+    def test_tabulate_jams(self):
+        pass
+
     def test_json_to_df(self):
         test_jam = [{'uid':'Jam 1',
                      'coluna1.1': 'conteúdo A',
@@ -152,6 +161,17 @@ class TestProcessingFunc(unittest.TestCase):
         self.assertEqual(test_df.shape, (2, 21))
         self.assertEqual(test_df['_id'].iloc[0], test_df['_id'].iloc[0])
         self.assertTrue(pd.isnull(test_df['jams_level'].iloc[0]))
+
+    def test_prep_jams_tosql(self):
+
+        test_df_jams = pd.read_csv(project_dir + "/tests/test_data/test_df_jams.csv")
+        test_jams_tosql = prep_jams_tosql(test_df_jams)
+        
+        self.assertEqual(len(test_jams_tosql.columns),16)
+        self.assertEqual(test_jams_tosql["JamTimeDelayInSeconds"].dtype, int)
+        self.assertEqual(test_jams_tosql["JamDateEnd"].dtype, datetime)
+        self.assertEqual(type(test_jams_tosql["JamDscStreet"].iloc[0]), str)
+        self.assertEqual(type(test_jams_tosql["JamDscCoordinatesLonLat"].iloc[0]), str)
         
     def test_UTM_to_lon_lat(self):
         l = [(713849, 7087931), (715062, 7088480)]
@@ -183,20 +203,11 @@ class TestProcessingFunc(unittest.TestCase):
         self.assertTrue(len(test_geo_sections['Street_line_XY'].iloc[0]), 3)
         self.assertTrue(len(test_geo_sections['Street_line_LonLat'].iloc[0]), 3)
         self.assertTrue(test_geo_sections['section_LineString'].iloc[0].distance(Point(test_geo_sections['Street_line_LonLat'].iloc[0][0])) < 1e-1)
-        self.assertTrue(math.isclose(test_geo_sections[['TrchDscCoordxUtmComeco', 'TrchDscCoordxUtmMeio', 'TrchDscCoordxUtmFinal']].values.min(), 699657, rel_tol=1e-6))
-        self.assertTrue(math.isclose(test_geo_sections[['TrchDscCoordxUtmComeco', 'TrchDscCoordxUtmMeio', 'TrchDscCoordxUtmFinal']].values.max(), 723463, rel_tol=1e-6))    
-        self.assertTrue(math.isclose(test_geo_sections[['TrchDscCoordyUtmComeco', 'TrchDscCoordyUtmMeio', 'TrchDscCoordyUtmFinal']].values.min(), 7078083, rel_tol=1e-7))
-        self.assertTrue(math.isclose(test_geo_sections[['TrchDscCoordyUtmComeco', 'TrchDscCoordyUtmMeio', 'TrchDscCoordyUtmFinal']].values.max(), 7108810, rel_tol=1e-7))
-           
-    def test_prep_jams_tosql(self):
-        test_df_jams = pd.read_csv("./tests/test_data/df_jams_test.csv", index_col=0)
-        test_jams_tosql = prep_jams_tosql(test_df_jams)
-        
-        self.assertEqual(len(test_jams_tosql.columns),16)
-        self.assertEqual(test_jams_tosql["JamTimeDelayInSeconds"].dtype, int)
-        self.assertEqual(test_jams_tosql["JamDateEnd"].dtype, datetime)
-        self.assertEqual(type(test_jams_tosql["JamDscStreet"].iloc[0]), str)
-        self.assertEqual(type(test_jams_tosql["JamDscCoordinatesLonLat"].iloc[0]), str)
+        self.assertTrue(math.isclose(test_geo_sections[['SctnDscCoordxUtmComeco', 'SctnDscCoordxUtmMeio', 'SctnDscCoordxUtmFinal']].values.min(), 699657, rel_tol=1e-6))
+        self.assertTrue(math.isclose(test_geo_sections[['SctnDscCoordxUtmComeco', 'SctnDscCoordxUtmMeio', 'SctnDscCoordxUtmFinal']].values.max(), 723463, rel_tol=1e-6))    
+        self.assertTrue(math.isclose(test_geo_sections[['SctnDscCoordyUtmComeco', 'SctnDscCoordyUtmMeio', 'SctnDscCoordyUtmFinal']].values.min(), 7078083, rel_tol=1e-7))
+        self.assertTrue(math.isclose(test_geo_sections[['SctnDscCoordyUtmComeco', 'SctnDscCoordyUtmMeio', 'SctnDscCoordyUtmFinal']].values.max(), 7108810, rel_tol=1e-7))
+
 
 class TestLoadFunc(unittest.TestCase):
 
