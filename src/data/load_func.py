@@ -152,15 +152,17 @@ def transf_traffic_per_timeslot(df_jps, meta, holiday_list):
   df_jps = df_jps[~df_jps["MgrcDateStart"].dt.date.isin(holiday_list)]
   wazesignals_per_timeslot = df_jps.groupby(["hour", "minute_bin"]).agg({"MgrcDateStart": pd.Series.nunique})
 
-  jps_per_timeslot = df_jps.groupby(["SctnId", "SctnDscNome", "hour", "minute_bin"]).agg({"JpsId": ['count'],
-                                                             "JamQtdLengthMeters": ["mean"],
-                                                             "JamSpdMetersPerSecond": ["mean"],
-                                                             "JamTimeDelayInSeconds": ["mean"],
-                                                             "JamIndLevelOfTraffic": ["mean"],
-                                                             "period": ["max"],
-                                                             })
+  jps_per_timeslot = df_jps.groupby(["SctnId", "SctnDscNome", "hour",
+                                     "minute_bin", "LonDirection","LatDirection"]) \
+                                          .agg({"JpsId": ['count'],
+                                               "JamQtdLengthMeters": ["mean"],
+                                               "JamSpdMetersPerSecond": ["mean"],
+                                               "JamTimeDelayInSeconds": ["mean"],
+                                               "JamIndLevelOfTraffic": ["mean"],
+                                               "period": ["max"],
+                                               })
   
-  jps_per_timeslot.reset_index(level=["SctnId", "SctnDscNome"], inplace=True)
+  jps_per_timeslot.reset_index(level=["SctnId", "SctnDscNome", "LonDirection","LatDirection"], inplace=True)
   jps_per_timeslot.columns = [''.join(col_name).strip() for col_name in jps_per_timeslot.columns.values]
   jps_per_timeslot = jps_per_timeslot.join(wazesignals_per_timeslot, how="outer")
   jps_per_timeslot["JamSpdKmPerHourmean"] = jps_per_timeslot["JamSpdMetersPerSecondmean"]*3.6
@@ -181,8 +183,7 @@ def transf_traffic_per_timeslot(df_jps, meta, holiday_list):
   geo_sections = extract_geo_sections(meta)
   jps_per_timeslot.reset_index(inplace=True)
   geo_jps_per_timeslot = geo_sections.merge(jps_per_timeslot, how="inner", on="SctnId")
-  geo_jps_per_timeslot.set_index(["SctnId", "hour", "minute_bin"], inplace=True)
-  geo_jps_per_timeslot.index.rename(["Codigo SIMGeo", "Hora", "Minuto"], inplace=True)
+  geo_jps_per_timeslot.set_index(["SctnId", "LonDirection","LatDirection", "hour", "minute_bin"], inplace=True)
 
   col_list = [col for col in columns.values()]
   col_list.append("section_LineString")
@@ -200,3 +201,6 @@ def transf_probability_matrix(geo_jps_per_timeslot, sections_interest):
   prob_matrix = gpd.sjoin(geo_sections_interest, geo_jps_per_timeslot, how="left", op="within")
 
   return prob_matrix
+
+def gen_traffic_indicators(prob_matrix):
+  g = prob_matrix.groupby("SctnId")
