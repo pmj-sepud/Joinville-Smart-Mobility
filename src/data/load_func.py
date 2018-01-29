@@ -152,7 +152,7 @@ def transf_traffic_per_timeslot(df_jps, meta, holiday_list):
   df_jps = df_jps[~df_jps["MgrcDateStart"].dt.date.isin(holiday_list)]
   wazesignals_per_timeslot = df_jps.groupby(["hour", "minute_bin"]).agg({"MgrcDateStart": pd.Series.nunique})
 
-  jps_per_timeslot = df_jps.groupby(["SctnId", "SctnDscNome", "hour",
+  jps_per_timeslot = df_jps.groupby(["SctnId", "hour",
                                      "minute_bin", "LonDirection","LatDirection"]) \
                                           .agg({"JpsId": ['count'],
                                                "JamQtdLengthMeters": ["mean"],
@@ -162,28 +162,27 @@ def transf_traffic_per_timeslot(df_jps, meta, holiday_list):
                                                "period": ["max"],
                                                })
   
-  jps_per_timeslot.reset_index(level=["SctnId", "SctnDscNome", "LonDirection","LatDirection"], inplace=True)
+  jps_per_timeslot.reset_index(level=["SctnId", "LonDirection","LatDirection"], inplace=True)
   jps_per_timeslot.columns = [''.join(col_name).strip() for col_name in jps_per_timeslot.columns.values]
   jps_per_timeslot = jps_per_timeslot.join(wazesignals_per_timeslot, how="outer")
   jps_per_timeslot["JamSpdKmPerHourmean"] = jps_per_timeslot["JamSpdMetersPerSecondmean"]*3.6
-  jps_per_timeslot["Probabilidade de trânsito (engarrafamentos/sinais)"] = jps_per_timeslot["JpsIdcount"]/\
-                                                                                 jps_per_timeslot["MgrcDateStart"]
+  jps_per_timeslot["traffic_prob"] = jps_per_timeslot["JpsIdcount"]/jps_per_timeslot["MgrcDateStart"]
 
   columns = {"MgrcDateStart": "Total de sinais do Waze",
              "JpsIdcount": "Engarrafamentos registrados",
-             "Probabilidade de trânsito (engarrafamentos/sinais)":"Probabilidade de trânsito (engarrafamentos/sinais)",
+             "traffic_prob":"traffic_prob",
              "JamSpdKmPerHourmean": "Velocidade Média (km/h)",
              "JamQtdLengthMetersmean": "Fila média (m)",
              "JamTimeDelayInSecondsmean": "Atraso médio (s)",
              "JamIndLevelOfTrafficmean": "Nível médio de congestionamento (0 a 5)",
-             "periodmax": "Manha (-1) / Tarde (1)",
+             "periodmax": "period",
             }
   jps_per_timeslot.rename(columns=columns, inplace=True)
 
-  geo_sections = extract_geo_sections(meta)
+  geo_sections = extract_geo_sections(meta, buffer=8)
   jps_per_timeslot.reset_index(inplace=True)
   geo_jps_per_timeslot = geo_sections.merge(jps_per_timeslot, how="inner", on="SctnId")
-  geo_jps_per_timeslot.set_index(["SctnId", "LonDirection","LatDirection", "hour", "minute_bin"], inplace=True)
+  geo_jps_per_timeslot.set_index(["SctnId", "SctnDscNome", "LonDirection","LatDirection", "hour", "minute_bin"], inplace=True)
 
   col_list = [col for col in columns.values()]
   col_list.append("section_LineString")
@@ -203,4 +202,33 @@ def transf_probability_matrix(geo_jps_per_timeslot, sections_interest):
   return prob_matrix
 
 def gen_traffic_indicators(prob_matrix):
-  g = prob_matrix.groupby("SctnId")
+  prob_matrix["notraffic_prob"] = 1 - prob_matrix["traffic_prob"]
+  prob_matrix["prod_Velocidade Média (km/h)"] = prob_matrix["traffic_prob"]*prob_matrix["Velocidade Média (km/h)"]
+  prob_matrix["prod_Fila média (m)"] = prob_matrix["traffic_prob"]*prob_matrix["Fila média (m)"]
+  prob_matrix["prod_Atraso médio (s)"] = prob_matrix["traffic_prob"]*prob_matrix["Atraso médio (s)"]
+  prob_matrix["prod_Nível médio de congestionamento (0 a 5)"] = prob_matrix["traffic_prob"]*prob_matrix["Nível médio de congestionamento (0 a 5)"]
+
+  g = prob_matrix.groupby(["SctnId", "SctnDscNome", "Longitude", "Latitude", "LonDirection", "LatDirection", "period"]).agg({'notraffic_prob': np.prod,
+                                                                          'traffic_prob': np.sum,
+                                                                           "prod_Velocidade Média (km/h)": np.sum,
+                                                                           "prod_Fila média (m)": np.sum,
+                                                                           "prod_Atraso médio (s)": np.sum,
+                                                                           "prod_Nível médio de congestionamento (0 a 5)": np.sum}) 
+  
+  g["Probabilidade de Trânsito"] = 1 - g["notraffic_prob"]
+  g["Velocidade Média (km/h)"] = g["prod_Velocidade Média (km/h)"] / g["traffic_prob"]
+  g["Fila média (m)"] = g["prod_Fila média (m)"] / g["traffic_prob"]
+  g["Atraso médio (s)"] = g["prod_Atraso médio (s)"] / g["traffic_prob"]
+  g["Nível médio de congestionamento (0 a 5)"] = g["prod_Nível médio de congestionamento (0 a 5)"] / g["traffic_prob"]
+
+
+
+  g = g[["Probabilidade de Trânsito",
+         "Velocidade Média (km/h)",
+         "Fila média (m)",
+         "Atraso médio (s)",
+         "Nível médio de congestionamento (0 a 5)"
+         ]
+      ]
+
+  return g

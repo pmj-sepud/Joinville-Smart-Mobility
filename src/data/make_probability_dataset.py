@@ -17,7 +17,8 @@ from src.data.load_func import (extract_jps,
 								transf_flow_features,
 								transf_flow_labels,
 								transf_traffic_per_timeslot,
-								transf_probability_matrix)
+								transf_probability_matrix,
+								gen_traffic_indicators)
 
 import dotenv
 dotenv_path = os.path.join(project_dir, '.env')
@@ -43,7 +44,7 @@ meta.reflect()
 #Generate probability and criticity indicators for sections of interest
 sections_interest = pd.read_csv(project_dir + "/data/external/vias_estudo.csv", index_col=0, decimal=',')
 
-date_begin = datetime.date(day=14, month=10, year=2017)
+date_begin = datetime.date(day=1, month=10, year=2017)
 date_end = datetime.date(day=15, month=10, year=2017)
 
 periods = [(7,9), (17,19)]
@@ -56,11 +57,10 @@ holiday_list = holidays["Data"].tolist()
 
 geo_jps_per_timeslot = transf_traffic_per_timeslot(df_jps, meta, holiday_list)
 prob_matrix = transf_probability_matrix(geo_jps_per_timeslot, sections_interest)
-#traffic_indicators = gen_traffic_indicators(prob_matrix)
+traffic_indicators = gen_traffic_indicators(prob_matrix)
 
 #geo_jps_per_timeslot.sort_index(inplace=True)
 #geo_jps_per_timeslot.reset_index(inplace=True)
 #geo_jps_per_timeslot.to_csv(project_dir + "/data/interim/jps_per_timeslot.csv")
 
-import pdb
-pdb.set_trace()
+traffic_indicators.to_csv(project_dir + "/data/processed/traffic_indicators.csv")
