@@ -11,7 +11,8 @@ from io import StringIO
 import pytz
 from sqlalchemy import create_engine, exc, MetaData
 from sqlalchemy.engine.url import URL
-from datetime import datetime, date
+from sqlalchemy.types import JSON as typeJSON
+import datetime
 import math
 from bson.objectid import ObjectId
 from pymongo import MongoClient
@@ -19,7 +20,9 @@ from shapely.geometry import Point
 
 from src.data.processing_func import (collect_records, tabulate_records, json_to_df,
                                 tabulate_jams, lon_lat_to_UTM, UTM_to_lon_lat,
-                                prep_jams_tosql, extract_geo_sections)
+                                prep_jams_tosql, prep_rawdata_tosql, extract_geo_sections)
+
+from src.data.load_func import (extract_jps)
 
 dotenv_path = os.path.join(project_dir, '.env')
 dotenv.load_dotenv(dotenv_path)
@@ -66,53 +69,6 @@ class TestProcessingFunc(unittest.TestCase):
 
         doc.close()
            
-    def test_tabulate_jams(self):
-        pass
-
-    def test_json_to_df(self):
-        test_jam = [{'uid':'Jam 1',
-                     'coluna1.1': 'conteúdo A',
-                     'coluna1.2': 'conteúdo B',
-                     'coluna1.3': 'conteúdo C',
-                     'coluna1.4':[{'1.4.1': 'conteúdo D',
-                             '1.4.2': 'conteúdo E',
-                             '1.4.3': 'conteúdo F',
-                            }],
-                    },
-                    {'uid': 'Jam 2',
-                     'coluna1.1': 'conteúdo G'},
-                    {'uid': 'Jam 3',
-                     'coluna1.1': 'conteúdo H',
-                     'coluna1.2': 'conteúdo I',
-                     'coluna1.3': 'conteúdo J',
-                    }
-                   ]
-                      
-        data = {'coluna A': 'a',
-                'coluna B': 'b',
-                'coluna C': test_jam,
-               }
-                     
-        test_row = pd.Series(data)
-
-        df = json_to_df(test_row, 'coluna C')
-        
-        self.assertEqual(type(df), pd.DataFrame)
-        self.assertEqual(df.shape, (3, 8))
-        self.assertEqual(df['coluna A'][0], 'a')
-        self.assertEqual(df['coluna B'][0], 'b')
-        self.assertEqual(df[df['coluna C_uid'] == 'Jam 1']['coluna C_coluna1.1'].iloc[0], 'conteúdo A')
-        self.assertEqual(type(df[df['coluna C_uid'] == 'Jam 1']['coluna C_coluna1.4'].iloc[0]), list)
-        self.assertTrue(pd.isnull(df[df['coluna C_uid'] == 'Jam 3']['coluna C_coluna1.4'].iloc[0]))
-        self.assertEqual(df['coluna A'].iloc[0], df['coluna A'].iloc[1])
-    
-    def test_lon_lat_to_UTM(self):
-        l = [(-48.85777, -26.31254), (-48.84572, -26.30740)]
-        UTM_list = lon_lat_to_UTM(l)
-        
-        self.assertTrue(math.isclose(UTM_list[0][1], 7087931, rel_tol=1e-7))
-        self.assertTrue(math.isclose(UTM_list[1][0], 715062, rel_tol=1e-6))
-        
     def test_tabulate_jams(self):
         sample_json = { "_id" : ObjectId("59cc0811d34a9512bab73343"),
                         "startTime" : "2017-09-27 20:17:00:000",
@@ -162,6 +118,50 @@ class TestProcessingFunc(unittest.TestCase):
         self.assertEqual(test_df['_id'].iloc[0], test_df['_id'].iloc[0])
         self.assertTrue(pd.isnull(test_df['jams_level'].iloc[0]))
 
+    def test_json_to_df(self):
+        test_jam = [{'uid':'Jam 1',
+                     'coluna1.1': 'conteúdo A',
+                     'coluna1.2': 'conteúdo B',
+                     'coluna1.3': 'conteúdo C',
+                     'coluna1.4':[{'1.4.1': 'conteúdo D',
+                             '1.4.2': 'conteúdo E',
+                             '1.4.3': 'conteúdo F',
+                            }],
+                    },
+                    {'uid': 'Jam 2',
+                     'coluna1.1': 'conteúdo G'},
+                    {'uid': 'Jam 3',
+                     'coluna1.1': 'conteúdo H',
+                     'coluna1.2': 'conteúdo I',
+                     'coluna1.3': 'conteúdo J',
+                    }
+                   ]
+                      
+        data = {'coluna A': 'a',
+                'coluna B': 'b',
+                'coluna C': test_jam,
+               }
+                     
+        test_row = pd.Series(data)
+
+        df = json_to_df(test_row, 'coluna C')
+        
+        self.assertEqual(type(df), pd.DataFrame)
+        self.assertEqual(df.shape, (3, 8))
+        self.assertEqual(df['coluna A'][0], 'a')
+        self.assertEqual(df['coluna B'][0], 'b')
+        self.assertEqual(df[df['coluna C_uid'] == 'Jam 1']['coluna C_coluna1.1'].iloc[0], 'conteúdo A')
+        self.assertEqual(type(df[df['coluna C_uid'] == 'Jam 1']['coluna C_coluna1.4'].iloc[0]), list)
+        self.assertTrue(pd.isnull(df[df['coluna C_uid'] == 'Jam 3']['coluna C_coluna1.4'].iloc[0]))
+        self.assertEqual(df['coluna A'].iloc[0], df['coluna A'].iloc[1])
+    
+    def test_lon_lat_to_UTM(self):
+        l = [(-48.85777, -26.31254), (-48.84572, -26.30740)]
+        UTM_list = lon_lat_to_UTM(l)
+        
+        self.assertTrue(math.isclose(UTM_list[0][1], 7087931, rel_tol=1e-7))
+        self.assertTrue(math.isclose(UTM_list[1][0], 715062, rel_tol=1e-6))
+
     def test_prep_jams_tosql(self):
 
         test_df_jams = pd.read_csv(project_dir + "/tests/test_data/test_df_jams.csv")
@@ -210,62 +210,56 @@ class TestProcessingFunc(unittest.TestCase):
 
 
 class TestLoadFunc(unittest.TestCase):
+    DATABASE = {
+        'drivername': os.environ.get("test_db_drivername"),
+        'host': os.environ.get("test_db_host"), 
+        'port': os.environ.get("test_db_port"),
+        'username': os.environ.get("test_db_username"),
+        'password': os.environ.get("test_db_password"),
+        'database': os.environ.get("test_db_database"),
+    }
+    db_url = URL(**DATABASE)
+    engine = create_engine(db_url)
+    meta = MetaData()
+    meta.bind = engine
+
+    @classmethod
+    def setUpClass(cls):
+        cls.meta.reflect()
+        test_df_jams = pd.read_csv(project_dir + "/tests/test_data/test_df_jams.csv")
+        test_mgrc_tosql = prep_rawdata_tosql(test_df_jams)
+        test_mgrc_tosql.to_sql("MongoRecord", con=cls.meta.bind, if_exists="replace", index=False)
+        test_jams_tosql = prep_jams_tosql(test_df_jams)
+        test_jams_tosql.to_sql("testJam", con=cls.meta.bind, if_exists="replace", index=False,
+                     dtype={"JamDscCoordinatesLonLat": typeJSON, 
+                            "JamDscSegments": typeJSON
+                           }
+                     )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.meta.reflect()
+        testJam = cls.meta.tables["testJam"]
+        testJam.drop()
 
     def test_extract_jps(self):
-        pass
+        """
+        1 - Date filter works properly
+        2 - Time filter works properly
+        3 - Weekends filter works properly
+        4 - Bins are set properly
+        """
+        #1
+        date_begin = datetime.date(day=27, month=9, year=2017)
+        date_end = datetime.date(day=28, month=9, year=2017)
+        df_jps = extract_jps(self.meta, date_begin, date_end)
+        self.assertEqual(len(df_jps), 2)
 
     def test_transf_flow_features(self):
         pass
 
     def test_transf_flow_labels(self):
         pass
-
-"""
-    def test_normalize_jps(self):
-
-        jps_to_normalize = pd.read_csv("../test_data/test_jps_to_normalize.csv", index_col=0)
-        jps_to_normalize["JamDateStart"] = jps_to_normalize["JamDateStart"].astype('datetime64[ns]')
-
-        norm_df_jps = normalize_jps(jps_to_normalize)
-
-        #import pdb
-        #pdb.set_trace()
-
-        test_date = date(year=2017, month=11, day=25)
-
-        self.assertEqual(norm_df_jps.shape, (2,10))
-        self.assertEqual(norm_df_jps[norm_df_jps["JamDateStart"] < test_date]["JamIndLevelOfTraffic"].iloc[0], 2)
-
-
-    def test_get_pivot_jps_means(self):
-        norm_df_jps = pd.read_csv("../test_data/test_norm_df_jps.csv")
-
-        pivot_jps_means = get_pivot_jps_means(norm_df_jps)
-
-        self.assertEqual(pivot_jps_means.shape, (1,6))
-        self.assertEqual(pivot_jps_means["JamIndLevelOfTraffic"].iloc[0], 3)
-
-
-    def test_get_pivot_jps_count(self):
-        norm_df_jps = pd.read_csv("../test_data/test_norm_df_jps.csv")
-
-        pivot_jps_count = get_pivot_jps_count(norm_df_jps)
-
-        self.assertEqual(pivot_jps_count.shape, (1,1))
-        self.assertEqual(pivot_jps_count["JamDateStart"].iloc[0], 2)
-
-    def test_gen_pivot_table(self):
-
-        df_jps = pd.read_csv("../test_data/test_jps_to_normalize.csv")
-
-        total_observations = df_jps['JamDateStart'].nunique()
-
-        pivot_table = gen_pivot_table(df_jps, total_observations)
-
-        self.assertEqual(pivot_table.shape, (1,9))
-        self.assertEqual(pivot_table.iloc[0]["Percentual de trânsito (min engarrafados / min monitorados)"],1)
-"""
-
 
 
     
