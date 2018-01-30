@@ -20,7 +20,8 @@ from shapely.geometry import Point
 
 from src.data.processing_func import (collect_records, tabulate_records, json_to_df,
                                 tabulate_jams, lon_lat_to_UTM, UTM_to_lon_lat,
-                                prep_jams_tosql, prep_rawdata_tosql, extract_geo_sections)
+                                prep_jams_tosql, prep_rawdata_tosql, extract_geo_sections,
+                                prep_section_tosql)
 
 from src.data.load_func import (extract_jps)
 
@@ -235,6 +236,12 @@ class TestLoadFunc(unittest.TestCase):
                             "JamDscSegments": typeJSON
                            }
                      )
+        df_sections = prep_section_tosql(project_dir + "/data/external/sepud_logradouros.csv")
+        df_sections.to_sql("Section", cls.meta.bind, if_exists="append", index_label="SctnId")
+        
+
+        import pdb
+        pdb.set_trace()
 
     @classmethod
     def tearDownClass(cls):

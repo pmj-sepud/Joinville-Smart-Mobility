@@ -37,11 +37,18 @@ meta.bind = engine
 meta.reflect()
 
 #Flush database tables
-print("Flushing databases...")
-mongo_record = meta.tables["MongoRecord"]
-jam = meta.tables["Jam"]
-mongo_record.delete().execute()
-jam.delete().execute()
+flush = None
+while (flush != "Y") and (flush != "N") and (flush != "y") and (flush != "n"):
+    flush = input("Are you sure you want to flush MongoRecord and Jam tables? (Y/N): ")
+    if (flush == "Y") or (flush == "y"):
+        print("Flushing tables...")
+        mongo_record = meta.tables["MongoRecord"]
+        jam = meta.tables["Jam"]
+        mongo_record.delete().execute()
+        jam.delete().execute()
+    elif (flush == "N") or (flush == "n"):
+        print("Aborting operation...")
+        sys.exit()
 
 #Store Mongo Record info
 all_files = os.listdir(project_dir+"/data/raw/")
@@ -79,4 +86,3 @@ for filename in all_files:
     #Build dataframe of alerts and store in PostgreSQL
 
     #Build dataframe of irregularities and store in PostgreSQL
-

@@ -6,6 +6,8 @@ import geojson
 from pymongo import MongoClient, DESCENDING
 from shapely.geometry import LineString
 import geopandas as gpd
+import math
+from timeit import default_timer as timer
 
 def collect_records(collection, limit=None):
     
@@ -136,6 +138,27 @@ def prep_jams_tosql(df_jams):
     jams_tosql = jams_tosql[actual_col_list]
 
     return jams_tosql
+
+def store_jps(meta, batch_size=20000):
+
+    geo_sections = extract_geo_sections(meta)
+
+    ##Divide the in batches
+    total_rows, = meta.tables["Jam"].count().execute().first()
+    number_batches = math.ceil(total_rows / batch_size)
+
+    for i in range(0, number_batches):
+        start = timer()
+        #Build and store JamPerSection
+        geo_jams = extract_geo_jams(meta, skip=i*batch_size, limit=batch_size)
+        jams_per_section = gpd.sjoin(geo_jams, geo_sections, how="inner", op="contains")
+        jams_per_section = jams_per_section[["JamDateStart", "JamUuid", "SctnId"]]  
+        jams_per_section["JamDateStart"] = jams_per_section["JamDateStart"].astype(pd.Timestamp)
+        jams_per_section.to_sql("JamPerSection", con=meta.bind, if_exists="append", index=False)
+        end = timer()
+        duration = str(round(end - start))
+        print("Batch " + str(i+1) + " of " + str(number_batches) + " took " + duration + " s to be successfully stored.")
+
 
 
 def lon_lat_to_UTM(l):

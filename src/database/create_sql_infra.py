@@ -103,9 +103,10 @@ class JamPerSection(Base):
                                            ondelete="CASCADE"),
                       UniqueConstraint("JamDateStart", "JamUuid", "SctnId", name="jammed_section"),
                       {})
-
+has_section = False
 if 'Section' in meta.tables.keys():
     has_section = True
+
 Base.metadata.create_all(engine)
 
 if has_section == True:
@@ -116,7 +117,10 @@ if has_section == True:
         This will cause you to lose any JamPerSection data you might have. (Y/N): """)
 
     if (flush_sections == "Y") or (flush_sections == "y"):
-        prep_section_tosql(project_dir + "/data/external/sepud_logradouros.csv")
+        jps = meta.tables["JamPerSection"]
+        jps.drop()
+        jps.create(engine)
+        df_sections = prep_section_tosql(project_dir + "/data/external/sepud_logradouros.csv")
         df_sections.to_sql("Section", meta.bind, if_exists="append", index_label="SctnId")
     elif (flush_sections == "N") or (flush_sections == "n"):
         print("No changes applied to the Section table")
