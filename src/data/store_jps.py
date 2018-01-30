@@ -37,15 +37,15 @@ meta = MetaData()
 meta.bind = engine
 meta.reflect()
 
-##Divide the in batches
-batch_size = 20000 #arbitrary number to make the code tractable
-total_rows, = meta.tables["Jam"].count().execute().first()
-number_batches = math.ceil(total_rows / batch_size)
-
 #Flush JamPersection and Build geo_sections
 jps = meta.tables["JamPerSection"]
 jps.delete().execute()
 geo_sections = extract_geo_sections(meta)
+
+##Divide the in batches
+batch_size = 20000 #arbitrary number to make the code tractable
+total_rows, = meta.tables["Jam"].count().execute().first()
+number_batches = math.ceil(total_rows / batch_size)
 
 for i in range(0, number_batches):
     start = timer()

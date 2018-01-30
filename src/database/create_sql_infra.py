@@ -15,6 +15,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import JSON as typeJSON
 from sqlalchemy.types import BigInteger
 
+from src.data.processing_func import (prep_section_tosql)
+
 project_dir = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
 dotenv_path = os.path.join(project_dir, '.env')
 dotenv.load_dotenv(dotenv_path)
@@ -34,7 +36,7 @@ engine = create_engine(db_url)
 Base = declarative_base()
 meta = MetaData()
 meta.bind = engine
-
+meta.reflect()
 
 class Section(Base):
     __tablename__ = "Section"
@@ -102,29 +104,19 @@ class JamPerSection(Base):
                       UniqueConstraint("JamDateStart", "JamUuid", "SctnId", name="jammed_section"),
                       {})
 
+if 'Section' in meta.tables.keys():
+    has_section = True
 Base.metadata.create_all(engine)
 
-df_sections = pd.read_csv(project_dir + "/data/external/sepud_logradouros.csv", decimal=",")
+if has_section == True:
+    flush_sections = None
+    while (flush_sections != "Y") and (flush_sections != "N") and (flush_sections != "y") and (flush_sections != "n"):
+        flush_sections = input("""
+        Do you wish to flush and recreate the Section table?
+        This will cause you to lose any JamPerSection data you might have. (Y/N): """)
 
-columns = {"objectid,N,10,0": "SctnIdArcgis",
-          "codlogra,N,10,0": "SctnCodRua",
-          "nomelog,C,254": "SctnDscNome",
-          "acumulo,N,10,0": "SctnQtdMetrosAcumulados",
-          "st_length_,N,19,11": "SctnQtdComprimento",
-          "Coord_x,N,19,11": "SctnDscCoordxUtmComeco",
-          "coord_y,N,19,11": "SctnDscCoordyUtmComeco",
-          "Cood_x_m,N,19,11": "SctnDscCoordxUtmMeio",
-          "Coord_y_m,N,19,11": "SctnDscCoordyUtmMeio",
-          "coord_x_f,N,19,11": "SctnDscCoordxUtmFinal",
-          "coord_y_f,N,19,11": "SctnDscCoordyUtmFinal",
-          }
-
-df_sections.rename(columns=columns, inplace=True)
-
-cols = [v for k, v in columns.items() ]
-df_sections = df_sections[cols]
-
-meta.reflect()
-section = meta.tables["Section"]
-section.delete().execute()
-df_sections.to_sql("Section", meta.bind, if_exists="append", index_label="SctnId")
+    if (flush_sections == "Y") or (flush_sections == "y"):
+        prep_section_tosql(project_dir + "/data/external/sepud_logradouros.csv")
+        df_sections.to_sql("Section", meta.bind, if_exists="append", index_label="SctnId")
+    elif (flush_sections == "N") or (flush_sections == "n"):
+        print("No changes applied to the Section table")

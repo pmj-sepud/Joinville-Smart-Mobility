@@ -33,6 +33,30 @@ def tabulate_records(records):
 
     return raw_data
 
+def prep_section_tosql(section_path):
+    df_sections = pd.read_csv(section_path, decimal=",")
+
+    columns = {"objectid,N,10,0": "SctnIdArcgis",
+              "codlogra,N,10,0": "SctnCodRua",
+              "nomelog,C,254": "SctnDscNome",
+              "acumulo,N,10,0": "SctnQtdMetrosAcumulados",
+              "st_length_,N,19,11": "SctnQtdComprimento",
+              "Coord_x,N,19,11": "SctnDscCoordxUtmComeco",
+              "coord_y,N,19,11": "SctnDscCoordyUtmComeco",
+              "Cood_x_m,N,19,11": "SctnDscCoordxUtmMeio",
+              "Coord_y_m,N,19,11": "SctnDscCoordyUtmMeio",
+              "coord_x_f,N,19,11": "SctnDscCoordxUtmFinal",
+              "coord_y_f,N,19,11": "SctnDscCoordyUtmFinal",
+              }
+
+    df_sections.rename(columns=columns, inplace=True)
+
+    cols = [v for k, v in columns.items() ]
+    df_sections = df_sections[cols]
+
+    return df_sections
+
+
 def prep_rawdata_tosql(raw_data):
 
     raw_data_tosql = raw_data[["startTime", "endTime"]]
