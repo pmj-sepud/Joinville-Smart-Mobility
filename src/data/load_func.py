@@ -39,7 +39,7 @@ def extract_jps(meta, date_begin, date_end, periods=None, weekends=False, summar
                   where(mongo_record.c.MgrcDateStart.between(date_begin, date_end))
 
   if not weekends:
-    query = query.where(extract("isodow", mongo_record.c.MgrcDateStart).in_(list(range(1,5))))
+    query = query.where(extract("isodow", mongo_record.c.MgrcDateStart).in_(list(range(1,6))))
 
   if periods:
     or_list=[]

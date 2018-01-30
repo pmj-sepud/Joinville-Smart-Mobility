@@ -21,7 +21,7 @@ from shapely.geometry import Point
 from src.data.processing_func import (collect_records, tabulate_records, json_to_df,
                                 tabulate_jams, lon_lat_to_UTM, UTM_to_lon_lat,
                                 prep_jams_tosql, prep_rawdata_tosql, extract_geo_sections,
-                                prep_section_tosql)
+                                prep_section_tosql, store_jps)
 
 from src.data.load_func import (extract_jps)
 
@@ -212,61 +212,64 @@ class TestProcessingFunc(unittest.TestCase):
 
 class TestLoadFunc(unittest.TestCase):
     DATABASE = {
-        'drivername': os.environ.get("test_db_drivername"),
-        'host': os.environ.get("test_db_host"), 
-        'port': os.environ.get("test_db_port"),
-        'username': os.environ.get("test_db_username"),
-        'password': os.environ.get("test_db_password"),
-        'database': os.environ.get("test_db_database"),
+        'drivername': os.environ.get("db_drivername"),
+        'host': os.environ.get("db_host"), 
+        'port': os.environ.get("db_port"),
+        'username': os.environ.get("db_username"),
+        'password': os.environ.get("db_password"),
+        'database': os.environ.get("db_database"),
     }
     db_url = URL(**DATABASE)
     engine = create_engine(db_url)
     meta = MetaData()
     meta.bind = engine
+    meta.reflect()
 
-    @classmethod
-    def setUpClass(cls):
-        cls.meta.reflect()
-        test_df_jams = pd.read_csv(project_dir + "/tests/test_data/test_df_jams.csv")
-        test_mgrc_tosql = prep_rawdata_tosql(test_df_jams)
-        test_mgrc_tosql.to_sql("MongoRecord", con=cls.meta.bind, if_exists="replace", index=False)
-        test_jams_tosql = prep_jams_tosql(test_df_jams)
-        test_jams_tosql.to_sql("testJam", con=cls.meta.bind, if_exists="replace", index=False,
-                     dtype={"JamDscCoordinatesLonLat": typeJSON, 
-                            "JamDscSegments": typeJSON
-                           }
-                     )
-        df_sections = prep_section_tosql(project_dir + "/data/external/sepud_logradouros.csv")
-        df_sections.to_sql("Section", cls.meta.bind, if_exists="append", index_label="SctnId")
-        
-
-        import pdb
-        pdb.set_trace()
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.meta.reflect()
-        testJam = cls.meta.tables["testJam"]
-        testJam.drop()
-
-    def test_extract_jps(self):
+    def test_extract_jps_datefilter(self):
         """
-        1 - Date filter works properly
+        Date filter works properly
+        """
+        date_begin = datetime.date(day=27, month=9, year=2017)
+        date_end = datetime.date(day=29, month=9, year=2017)
+        df_jps = extract_jps(self.meta, date_begin, date_end)
+
+        self.assertEqual(df_jps["MgrcDateStart"].dt.date.nunique(), 2)
+
+    def test_extract_jps_timefilter(self):
+        """
         2 - Time filter works properly
-        3 - Weekends filter works properly
-        4 - Bins are set properly
         """
-        #1
+        date_begin = datetime.date(day=28, month=9, year=2017)
+        date_end = datetime.date(day=29, month=9, year=2017)
+        periods = [(7,9), (17,19)]
+        df_jps = extract_jps(self.meta, date_begin, date_end, periods=periods)
+
+        self.assertEqual(df_jps["MgrcDateStart"].dt.hour.nunique(), 4)
+
+    def test_extract_jps_weekendsfilter(self):
+        """
+        3 - Weekends filter works properly
+        """
+        date_begin = datetime.date(day=28, month=9, year=2017)
+        date_end = datetime.date(day=10, month=10, year=2017)
+        periods = [(17,19)]
+        df_jps_wkTrue = extract_jps(self.meta, date_begin, date_end, periods=periods, weekends=True)
+        df_jps_wkFalse = extract_jps(self.meta, date_begin, date_end, periods=periods, weekends=False)
+
+        self.assertEqual(df_jps_wkTrue["MgrcDateStart"].dt.dayofweek.nunique(), 7)
+        self.assertEqual(df_jps_wkFalse["MgrcDateStart"].dt.dayofweek.nunique(), 5) 
+
+    def test_extract_jps_binsdivision(self):
+        """
+        Bins are set properly
+        """
         date_begin = datetime.date(day=27, month=9, year=2017)
         date_end = datetime.date(day=28, month=9, year=2017)
         df_jps = extract_jps(self.meta, date_begin, date_end)
-        self.assertEqual(len(df_jps), 2)
+        df_jps['minute_bin_check'] = (df_jps["MgrcDateStart"].dt.minute < df_jps["minute_bin"].str[0:2].astype(int)) \
+                                     | (df_jps["MgrcDateStart"].dt.minute > df_jps["minute_bin"].str[-2:].astype(int))
 
-    def test_transf_flow_features(self):
-        pass
-
-    def test_transf_flow_labels(self):
-        pass
+        self.assertEqual(df_jps["minute_bin_check"].sum(), 0)
 
 
     
