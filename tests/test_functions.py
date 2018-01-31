@@ -170,7 +170,7 @@ class TestProcessingFunc(unittest.TestCase):
         
         self.assertEqual(len(test_jams_tosql.columns),16)
         self.assertEqual(test_jams_tosql["JamTimeDelayInSeconds"].dtype, int)
-        self.assertEqual(test_jams_tosql["JamDateEnd"].dtype, datetime)
+        self.assertEqual(test_jams_tosql["JamDateEnd"].dtype, datetime.datetime)
         self.assertEqual(type(test_jams_tosql["JamDscStreet"].iloc[0]), str)
         self.assertEqual(type(test_jams_tosql["JamDscCoordinatesLonLat"].iloc[0]), str)
         

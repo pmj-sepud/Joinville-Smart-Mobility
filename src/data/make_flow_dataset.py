@@ -12,7 +12,7 @@ from sqlalchemy.sql import or_
 import datetime
 from pytz import timezone
 
-from src.data.processing_func import (get_direction)
+from src.data.processing_func import (get_direction, connect_database)
 from src.data.load_func import extract_jps, transf_flow_features, transf_flow_labels
 
 import dotenv
@@ -20,21 +20,7 @@ dotenv_path = os.path.join(project_dir, '.env')
 dotenv.load_dotenv(dotenv_path)
 
 #Connection and initial setup
-DATABASE = {
-    'drivername': os.environ.get("db_drivername"),
-    'host': os.environ.get("db_host"), 
-    'port': os.environ.get("db_port"),
-    'username': os.environ.get("db_username"),
-    'password': os.environ.get("db_password"),
-    'database': os.environ.get("db_database"),
-}
-
-timezone = os.environ.get("timezone")
-db_url = URL(**DATABASE)
-engine = create_engine(db_url, connect_args={"options": "-c timezone="+timezone})
-meta = MetaData()
-meta.bind = engine
-meta.reflect()
+meta = connect_database()
 
 date_begin = datetime.date(day=15, month=10, year=2017)
 date_end = datetime.date(day=20, month=10, year=2017)

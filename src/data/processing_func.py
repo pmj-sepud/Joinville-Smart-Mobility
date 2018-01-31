@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 from pandas.io.json import json_normalize
@@ -8,6 +9,9 @@ from shapely.geometry import LineString
 import geopandas as gpd
 import math
 from timeit import default_timer as timer
+
+from sqlalchemy import MetaData, create_engine, extract, select
+from sqlalchemy.engine.url import URL
 
 def collect_records(collection, limit=None):
     
@@ -34,6 +38,25 @@ def tabulate_records(records):
     raw_data['endTime'] = raw_data['endTime'].astype(pd.Timestamp)
 
     return raw_data
+
+def connect_database():
+    DATABASE = {
+    'drivername': os.environ.get("db_drivername"),
+    'host': os.environ.get("db_host"), 
+    'port': os.environ.get("db_port"),
+    'username': os.environ.get("db_username"),
+    'password': os.environ.get("db_password"),
+    'database': os.environ.get("db_database"),
+}
+
+    timezone = os.environ.get("timezone")
+    db_url = URL(**DATABASE)
+    engine = create_engine(db_url, connect_args={"options": "-c timezone="+timezone})
+    meta = MetaData()
+    meta.bind = engine
+    meta.reflect()
+
+    return meta
 
 def prep_section_tosql(section_path):
     df_sections = pd.read_csv(section_path, decimal=",")

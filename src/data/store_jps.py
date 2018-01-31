@@ -11,27 +11,14 @@ from sqlalchemy import MetaData
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import TIMESTAMP as typeTIMESTAMP
 
-from src.data.processing_func import (extract_geo_jams, extract_geo_sections, store_jps)
+from src.data.processing_func import (extract_geo_jams, extract_geo_sections, store_jps, connect_database)
 
 project_dir = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
 dotenv_path = os.path.join(project_dir, '.env')
 dotenv.load_dotenv(dotenv_path)
 
 #Connection and initial setup
-DATABASE = {
-    'drivername': os.environ.get("db_drivername"),
-    'host': os.environ.get("db_host"), 
-    'port': os.environ.get("db_port"),
-    'username': os.environ.get("db_username"),
-    'password': os.environ.get("db_password"),
-    'database': os.environ.get("db_database"),
-}
-
-db_url = URL(**DATABASE)
-engine = create_engine(db_url)
-meta = MetaData()
-meta.bind = engine
-meta.reflect()
+meta = connect_database()
 
 #Flush JamPersection and Build geo_sections
 flush = None

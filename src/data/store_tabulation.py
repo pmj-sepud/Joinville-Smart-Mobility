@@ -14,27 +14,15 @@ from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import JSON as typeJSON
 
-from src.data.processing_func import tabulate_records, prep_rawdata_tosql, tabulate_jams, prep_jams_tosql
+from src.data.processing_func import (tabulate_records, prep_rawdata_tosql, tabulate_jams,
+                                     prep_jams_tosql, connect_database)
 
 project_dir = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
 dotenv_path = os.path.join(project_dir, '.env')
 dotenv.load_dotenv(dotenv_path)
 
 #Connection and initial setup
-DATABASE = {
-    'drivername': os.environ.get("db_drivername"),
-    'host': os.environ.get("db_host"), 
-    'port': os.environ.get("db_port"),
-    'username': os.environ.get("db_username"),
-    'password': os.environ.get("db_password"),
-    'database': os.environ.get("db_database"),
-}
-
-db_url = URL(**DATABASE)
-engine = create_engine(db_url)
-meta = MetaData()
-meta.bind = engine
-meta.reflect()
+meta = connect_database()
 
 #Flush database tables
 flush = None
