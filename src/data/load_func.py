@@ -46,6 +46,10 @@ def extract_jps(meta, date_begin, date_end, periods=None, weekends=False, summar
   df_jps = pd.read_sql(query, meta.bind)
   df_jps["JamSpdKmPerHour"] = df_jps["JamSpdMetersPerSecond"]*3.6
   df_jps[["LonDirection","LatDirection"]] = df_jps["JamDscCoordinatesLonLat"].apply(get_direction)
+  try:
+    df_jps["MgrcDateStart"] = df_jps["MgrcDateStart"].dt.tz_convert("America/Sao_Paulo")
+  except AttributeError:
+    pass
   df_jps["date"] = pd.to_datetime(df_jps["MgrcDateStart"], utc=True).dt.date
   df_jps["hour"] = df_jps["MgrcDateStart"].astype(str).str[11:13].astype(int)
   df_jps["minute"] = df_jps["MgrcDateStart"].astype(str).str[14:16].astype(int)
