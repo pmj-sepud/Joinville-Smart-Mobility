@@ -88,6 +88,7 @@ def extract_jps(meta, date_begin, date_end, periods=None, weekends=False,
       n_trechos = df_jps["SctnId"].nunique()
 
       print("Tempo para carregamento dos dados: " + str(processing_time) + " segundos.")
+      print("Number of rows:" + str(len(df_jps)))
       print("Minutos de engarrafamento carregados: " + str(minutos_engarrafados))
       print("Número de trechos abrangidos: " + str(n_trechos))
 
@@ -140,7 +141,7 @@ def transf_flow_labels(meta, path_fluxos):
   df_flow_labels.set_index("date", inplace=True) #Done separately because set_index to Multiindex convert date type to Timestamp
   df_flow_labels.set_index(["SctnId", "hour", "minute_bin", "Direction"], append=True, inplace=True)
   df_flow_labels.index = df_flow_labels.index.swaplevel(0,1) #So index will be in the same order as df_flow_features
-  columns = ['Endereco', 'Corredor', 'Ciclofaixa', 'Numero de faixas', 'Sentido', 'Equipamento', '00 a 10',
+  columns = ['Endereco', 'SctnDscNome', 'SctnQtdMetrosAcumulados', 'Corredor', 'Ciclofaixa', 'Numero de faixas', 'Sentido', 'Equipamento', '00 a 10',
              '11 a 20', '21 a 30', '31 a 40', '41 a 50', '51 a 60', '61 a 70',
              '71 a 80', '81 a 90', '91 a 100', 'Acima de 100', 'Total',
             ]
