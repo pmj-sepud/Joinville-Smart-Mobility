@@ -39,15 +39,9 @@ def tabulate_records(records):
 
     return raw_data
 
-def connect_database():
-    DATABASE = {
-    'drivername': os.environ.get("db_drivername"),
-    'host': os.environ.get("db_host"), 
-    'port': os.environ.get("db_port"),
-    'username': os.environ.get("db_username"),
-    'password': os.environ.get("db_password"),
-    'database': os.environ.get("db_database"),
-}
+def connect_database(database_dict):
+
+    DATABASE = database_dict
 
     timezone = os.environ.get("timezone")
     db_url = URL(**DATABASE)

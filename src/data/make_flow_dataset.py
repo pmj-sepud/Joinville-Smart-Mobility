@@ -33,7 +33,16 @@ elif (rewrite_files == "Y") or (rewrite_files == "y"):
         os.remove(f)
 
 #Connection and initial setup
-meta = connect_database()
+DATABASE = {
+'drivername': os.environ.get("db_drivername"),
+'host': os.environ.get("db_host"), 
+'port': os.environ.get("db_port"),
+'username': os.environ.get("db_username"),
+'password': os.environ.get("db_password"),
+'database': os.environ.get("db_database"),
+}
+
+meta = connect_database(DATABASE)
 
 path_fluxos = project_dir + "/data/external/fotosensores_Fluxo_veiculos.csv"
 df_flow_labels = transf_flow_labels(meta, path_fluxos)
