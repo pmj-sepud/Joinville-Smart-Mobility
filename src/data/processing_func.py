@@ -205,9 +205,49 @@ def UTM_to_lon_lat(l):
     return list_of_coordinates
 
 def extract_geo_sections(meta, buffer=10):
+
+    def get_major_direction(x):
+        delta_x = x["MaxX"] - x["MinX"]
+        delta_y = x["MaxY"] - x["MinY"]
+        if delta_y >= delta_x:
+            return "Norte/Sul"
+        else:
+            return "Leste/Oeste"
+
     section = meta.tables['Section']
     sections_query = section.select()
     df_sections = pd.read_sql(sections_query, con=meta.bind)
+
+    #Get Major Direction
+    df_sections["MinX"] = df_sections.apply(lambda x: min(x["SctnDscCoordxUtmComeco"],
+                                                     x["SctnDscCoordxUtmMeio"],
+                                                     x["SctnDscCoordxUtmFinal"]),
+                                        axis=1)
+
+    df_sections["MaxX"] = df_sections.apply(lambda x: max(x["SctnDscCoordxUtmComeco"],
+                                                         x["SctnDscCoordxUtmMeio"],
+                                                         x["SctnDscCoordxUtmFinal"]),
+                                            axis=1)
+
+    df_sections["MinY"] = df_sections.apply(lambda x: min(x["SctnDscCoordyUtmComeco"],
+                                                         x["SctnDscCoordyUtmMeio"],
+                                                         x["SctnDscCoordyUtmFinal"]),
+                                            axis=1)
+
+    df_sections["MaxY"] = df_sections.apply(lambda x: max(x["SctnDscCoordyUtmComeco"],
+                                                         x["SctnDscCoordyUtmMeio"],
+                                                         x["SctnDscCoordyUtmFinal"]),
+                                            axis=1)
+
+    
+    gb = df_sections.groupby("SctnDscNome").agg({"MinX": "min",
+                                           "MaxX": "max",
+                                           "MinY": "min",
+                                           "MaxY": "max",})
+
+    gb["MajorDirection"] = gb.apply(lambda x: get_major_direction(x), axis=1)
+    gb = gb["MajorDirection"]
+    df_sections = df_sections.join(gb, on="SctnDscNome")
 
     #Create Geometry shapes
     df_sections["Street_line_XY"] = df_sections.apply(lambda x: [tuple([x['SctnDscCoordxUtmComeco'], x['SctnDscCoordyUtmComeco']]),
