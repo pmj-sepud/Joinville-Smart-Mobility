@@ -18,7 +18,16 @@ dotenv_path = os.path.join(project_dir, '.env')
 dotenv.load_dotenv(dotenv_path)
 
 #Connection and initial setup
-meta = connect_database()
+DATABASE = {
+'drivername': os.environ.get("db_drivername"),
+'host': os.environ.get("db_host"), 
+'port': os.environ.get("db_port"),
+'username': os.environ.get("db_username"),
+'password': os.environ.get("db_password"),
+'database': os.environ.get("db_database"),
+}
+
+meta = connect_database(DATABASE)
 
 #Flush JamPersection and Build geo_sections
 flush = None

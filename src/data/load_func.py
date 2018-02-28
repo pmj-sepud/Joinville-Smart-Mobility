@@ -59,7 +59,7 @@ def extract_jps(meta, date_begin, date_end, periods=None, weekends=False,
 
     df_jps = pd.read_sql(query_all, meta.bind)
     df_jps["JamSpdKmPerHour"] = df_jps["JamSpdMetersPerSecond"]*3.6
-    df_jps[["LonDirection","LatDirection"]] = df_jps["JamDscCoordinatesLonLat"].apply(get_direction)
+    df_jps[["LonDirection","LatDirection", "MajorDirection"]] = df_jps["JamDscCoordinatesLonLat"].apply(get_direction)
     try:
         df_jps["MgrcDateStart"] = df_jps["MgrcDateStart"].dt.tz_convert("America/Sao_Paulo")
     except AttributeError:
@@ -95,19 +95,19 @@ def extract_jps(meta, date_begin, date_end, periods=None, weekends=False,
 
 def transf_flow_features(df_jps, geo_sections):
     def get_main_direction(x):
-        if x["MajorDirection"] == "Norte/Sul":
+        if x["StreetDirection"] == "Norte/Sul":
             return x["LatDirection"]
-        elif x["MajorDirection"] == "Leste/Oeste":
+        elif x["StreetDirection"] == "Leste/Oeste":
             return x["LonDirection"]
 
 
     #Get Major Direction from geo_sections
-    major_direction = geo_sections["MajorDirection"]
+    major_direction = geo_sections["StreetDirection"]
     df_jps = df_jps.join(major_direction, on="SctnId")
 
     #Create feature dataset
     df_flow_features = df_jps.groupby(["SctnId", "date", "hour",
-                     "minute_bin", "LonDirection", "LatDirection", "MajorDirection"]).agg(
+                     "minute_bin", "LonDirection", "LatDirection", "StreetDirection"]).agg(
                                                           {"JamQtdLengthMeters": ["mean"],
                                                            "JamSpdMetersPerSecond": ["mean"],
                                                            "JamTimeDelayInSeconds": ["mean"],
@@ -120,7 +120,7 @@ def transf_flow_features(df_jps, geo_sections):
                "JamTimeDelayInSeconds_mean": "Atraso médio (s)",
                "JamIndLevelOfTraffic_mean": "Nível médio de congestionamento (0 a 5)"
               }
-    df_flow_features.reset_index(["LonDirection", "LatDirection", "MajorDirection"], inplace=True)
+    df_flow_features.reset_index(["LonDirection", "LatDirection", "StreetDirection"], inplace=True)
     df_flow_features["Direction"] = df_flow_features.apply(lambda x: get_main_direction(x), axis=1)
     df_flow_features.set_index("Direction", append=True, inplace=True)
     df_flow_features.rename(columns=columns, inplace=True)

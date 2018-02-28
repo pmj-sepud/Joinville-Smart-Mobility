@@ -157,6 +157,17 @@ def prep_jams_tosql(df_jams):
     return jams_tosql
 
 def store_jps(meta, batch_size=20000):
+    def check_directions(x):
+        """
+        Check for jams whose direction is not aligned with the direction of the street or the section.
+        Ex.: perpendicular streets, which would intersect with the jam.
+        """
+        if x["MajorDirection"] == x["StreetDirection"]:
+            return True
+        elif x["MajorDirection"] == x["SectionDirection"]:
+            return True
+        else:
+            return False
 
     geo_sections = extract_geo_sections(meta)
 
@@ -168,7 +179,9 @@ def store_jps(meta, batch_size=20000):
         start = timer()
         #Build and store JamPerSection
         geo_jams = extract_geo_jams(meta, skip=i*batch_size, limit=batch_size)
-        jams_per_section = gpd.sjoin(geo_jams, geo_sections, how="inner", op="contains")
+        jams_per_section = gpd.sjoin(geo_jams, geo_sections, how="inner", op="intersects")
+        jams_per_section["CheckDirections"] = jams_per_section.apply(lambda x: check_directions(x), axis=1)
+        jams_per_section = jams_per_section[jams_per_section["CheckDirections"]] #delete perpendicular streets
         jams_per_section = jams_per_section[["JamDateStart", "JamUuid", "SctnId"]]  
         jams_per_section["JamDateStart"] = jams_per_section["JamDateStart"].astype(pd.Timestamp)
         jams_per_section.to_sql("JamPerSection", con=meta.bind, if_exists="append", index=False)
@@ -206,7 +219,7 @@ def UTM_to_lon_lat(l):
 
 def extract_geo_sections(meta, buffer=10):
 
-    def get_major_direction(x):
+    def get_main_direction(x):
         delta_x = x["MaxX"] - x["MinX"]
         delta_y = x["MaxY"] - x["MinY"]
         if delta_y >= delta_x:
@@ -218,7 +231,6 @@ def extract_geo_sections(meta, buffer=10):
     sections_query = section.select()
     df_sections = pd.read_sql(sections_query, con=meta.bind)
 
-    #Get Major Direction
     df_sections["MinX"] = df_sections.apply(lambda x: min(x["SctnDscCoordxUtmComeco"],
                                                      x["SctnDscCoordxUtmMeio"],
                                                      x["SctnDscCoordxUtmFinal"]),
@@ -239,15 +251,18 @@ def extract_geo_sections(meta, buffer=10):
                                                          x["SctnDscCoordyUtmFinal"]),
                                             axis=1)
 
-    
+    #Get Street Direction
     gb = df_sections.groupby("SctnDscNome").agg({"MinX": "min",
                                            "MaxX": "max",
                                            "MinY": "min",
                                            "MaxY": "max",})
 
-    gb["MajorDirection"] = gb.apply(lambda x: get_major_direction(x), axis=1)
-    gb = gb["MajorDirection"]
+    gb["StreetDirection"] = gb.apply(lambda x: get_main_direction(x), axis=1)
+    gb = gb["StreetDirection"]
     df_sections = df_sections.join(gb, on="SctnDscNome")
+
+    #Get Section Direction
+    df_sections["SectionDirection"] = df_sections.apply(lambda x: get_main_direction(x), axis=1)
 
     #Create Geometry shapes
     df_sections["Street_line_XY"] = df_sections.apply(lambda x: [tuple([x['SctnDscCoordxUtmComeco'], x['SctnDscCoordyUtmComeco']]),
@@ -270,6 +285,8 @@ def extract_geo_jams(meta, skip=0, limit=None, buffer=20):
     df_jams['jams_line_list'] = df_jams['JamDscCoordinatesLonLat'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
     df_jams['jams_line_UTM'] = df_jams['jams_line_list'].apply(lon_lat_to_UTM)
     df_jams['jam_LineString'] = df_jams.apply(lambda x: LineString(x['jams_line_UTM']).buffer(buffer), axis=1)
+    df_jams[["LonDirection","LatDirection", "MajorDirection"]] = df_jams["JamDscCoordinatesLonLat"].apply(get_direction)
+
     crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
     geo_jams = gpd.GeoDataFrame(df_jams, crs=crs, geometry="jam_LineString")
     geo_jams = geo_jams.to_crs({'init': 'epsg:4326'})
@@ -304,7 +321,8 @@ def get_direction(coord_list):
     #North/South
     y_start = coord_list[0]["y"]
     y_end = coord_list[num_coords-1]["y"]
-    if (y_end-y_start) >= 0:
+    delta_y = (y_end-y_start)
+    if delta_y >= 0:
         lat_direction = "North"
     else:
         lat_direction = "South"
@@ -312,9 +330,17 @@ def get_direction(coord_list):
     #East/West
     x_start = coord_list[0]["x"]
     x_end = coord_list[num_coords-1]["x"]
-    if (x_end-x_start) >= 0:
+    delta_x = (x_end-x_start)
+    if delta_x >= 0:
         lon_direction = "East"
     else:
         lon_direction = "West"
+
+    #MajorDirection
+    if abs(delta_y) > abs(delta_x):
+        major_direction = "Norte/Sul"
+    else:
+        major_direction = "Leste/Oeste"
+
         
-    return pd.Series([lon_direction, lat_direction])
+    return pd.Series([lon_direction, lat_direction, major_direction])
