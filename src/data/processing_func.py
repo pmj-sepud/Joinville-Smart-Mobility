@@ -169,7 +169,7 @@ def store_jps(meta, batch_size=20000):
         else:
             return False
 
-    geo_sections = extract_geo_sections(meta)
+    geo_sections = extract_geo_sections(meta, main_buffer=10, alt_buffer=20) #thin polygon
 
     ##Divide the in batches
     total_rows, = meta.tables["Jam"].count().execute().first()
@@ -177,19 +177,43 @@ def store_jps(meta, batch_size=20000):
 
     for i in range(0, number_batches):
         start = timer()
-        #Build and store JamPerSection
-        geo_jams = extract_geo_jams(meta, skip=i*batch_size, limit=batch_size)
-        jams_per_section = gpd.sjoin(geo_jams, geo_sections, how="inner", op="intersects")
-        jams_per_section["CheckDirections"] = jams_per_section.apply(lambda x: check_directions(x), axis=1)
-        jams_per_section = jams_per_section[jams_per_section["CheckDirections"]] #delete perpendicular streets
+        geo_jams = extract_geo_jams(meta, skip=i*batch_size, limit=batch_size, main_buffer=20, alt_buffer=10) #fat polygon
+
+        #Find jams that contain sections entirely
+        jams_per_section_contains = gpd.sjoin(geo_jams, geo_sections, how="left", op="contains")
+        ids_not_located_contains = jams_per_section_contains[jams_per_section_contains["SctnId"].isnull()]["JamId"]
+        jams_per_section_contains.dropna(subset=["SctnId"], inplace=True)
+
+        #Find jams that are entirely within sections
+        jams_left_from_contains = geo_jams.loc[geo_jams["JamId"].\
+                                  isin(ids_not_located_contains)].\
+                                  set_geometry("jam_alt_LineString") #thin jam polygon
+
+        geo_sections = geo_sections.set_geometry("section_alt_LineString") #fat section polygon
+        jams_per_section_within = gpd.sjoin(jams_left_from_contains, geo_sections, how="left", op="within")
+        ids_not_located_within = jams_per_section_within[jams_per_section_within["SctnId"].isnull()]["JamId"]
+        jams_per_section_within.dropna(subset=["SctnId"], inplace=True)
+
+        #Find jams that intersect but with plausible directions (avoid perpendiculars).
+        geo_sections = geo_sections.set_geometry("section_LineString") #Both polygons should be thin.
+        jams_left_from_within = geo_jams.loc[geo_jams["JamId"].isin(ids_not_located_within)]
+        jams_per_section_intersects = gpd.sjoin(jams_left_from_within, geo_sections, how="inner", op="intersects")
+        jams_per_section_intersects["CheckDirections"] = jams_per_section_intersects.apply(lambda x: check_directions(x), axis=1)
+        jams_per_section_intersects = jams_per_section_intersects[jams_per_section_intersects["CheckDirections"]] #delete perpendicular streets
+        jams_per_section_intersects.drop(labels="CheckDirections", axis=1, inplace=True)
+
+        #Concatenate three dataframes
+        jams_per_section = pd.concat([jams_per_section_contains,
+                                      jams_per_section_within,
+                                      jams_per_section_intersects], ignore_index=True)
+
+        #Store in database
         jams_per_section = jams_per_section[["JamDateStart", "JamUuid", "SctnId"]]  
         jams_per_section["JamDateStart"] = jams_per_section["JamDateStart"].astype(pd.Timestamp)
         jams_per_section.to_sql("JamPerSection", con=meta.bind, if_exists="append", index=False)
         end = timer()
         duration = str(round(end - start))
         print("Batch " + str(i+1) + " of " + str(number_batches) + " took " + duration + " s to be successfully stored.")
-
-
 
 def lon_lat_to_UTM(l):
     '''
@@ -217,7 +241,7 @@ def UTM_to_lon_lat(l):
         
     return list_of_coordinates
 
-def extract_geo_sections(meta, buffer=10):
+def extract_geo_sections(meta, main_buffer=10, alt_buffer=20):
 
     def get_main_direction(x):
         delta_x = x["MaxX"] - x["MinX"]
@@ -271,20 +295,23 @@ def extract_geo_sections(meta, buffer=10):
                                                               ], axis=1)
 
     df_sections["Street_line_LonLat"] = df_sections['Street_line_XY'].apply(UTM_to_lon_lat)
-    df_sections['section_LineString'] = df_sections.apply(lambda x: LineString(x['Street_line_XY']).buffer(buffer), axis=1)
+    df_sections['section_LineString'] = df_sections.apply(lambda x: LineString(x['Street_line_XY']).buffer(main_buffer), axis=1)
+    df_sections['section_alt_LineString'] = df_sections.apply(lambda x: LineString(x['Street_line_XY']).buffer(alt_buffer), axis=1)
+
     crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
     geo_sections = gpd.GeoDataFrame(df_sections, crs=crs, geometry="section_LineString")
     geo_sections = geo_sections.to_crs({'init': 'epsg:4326'})
 
     return geo_sections
 
-def extract_geo_jams(meta, skip=0, limit=None, buffer=20):
+def extract_geo_jams(meta, skip=0, limit=None, main_buffer=10, alt_buffer=20):
     jam = meta.tables['Jam']
     jams_query = jam.select().order_by(jam.c.JamDateStart).offset(skip).limit(limit)
     df_jams = pd.read_sql(jams_query, con=meta.bind)
     df_jams['jams_line_list'] = df_jams['JamDscCoordinatesLonLat'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
     df_jams['jams_line_UTM'] = df_jams['jams_line_list'].apply(lon_lat_to_UTM)
-    df_jams['jam_LineString'] = df_jams.apply(lambda x: LineString(x['jams_line_UTM']).buffer(buffer), axis=1)
+    df_jams['jam_LineString'] = df_jams.apply(lambda x: LineString(x['jams_line_UTM']).buffer(main_buffer), axis=1)
+    df_jams['jam_alt_LineString'] = df_jams.apply(lambda x: LineString(x['jams_line_UTM']).buffer(alt_buffer), axis=1)
     df_jams[["LonDirection","LatDirection", "MajorDirection"]] = df_jams["JamDscCoordinatesLonLat"].apply(get_direction)
 
     crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
