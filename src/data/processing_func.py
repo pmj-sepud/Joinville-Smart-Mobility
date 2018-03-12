@@ -350,18 +350,18 @@ def get_direction(coord_list):
     y_end = coord_list[num_coords-1]["y"]
     delta_y = (y_end-y_start)
     if delta_y >= 0:
-        lat_direction = "North"
+        lat_direction = "Norte"
     else:
-        lat_direction = "South"
+        lat_direction = "Sul"
         
     #East/West
     x_start = coord_list[0]["x"]
     x_end = coord_list[num_coords-1]["x"]
     delta_x = (x_end-x_start)
     if delta_x >= 0:
-        lon_direction = "East"
+        lon_direction = "Leste"
     else:
-        lon_direction = "West"
+        lon_direction = "Oeste"
 
     #MajorDirection
     if abs(delta_y) > abs(delta_x):
