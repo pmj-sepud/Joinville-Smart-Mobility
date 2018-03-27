@@ -16,13 +16,17 @@ from pymongo import MongoClient, DESCENDING, ASCENDING
 from processing_func import collect_records
 
 parser = argparse.ArgumentParser(description="Collect Waze's raw data")
-parser.add_argument('batchsize', type=int, help="Size of download batches")
-parser.add_argument('update', type=bool, nargs='?', const=False,
+parser.add_argument('--batchsize', type=int, help="Size of download batches")
+parser.add_argument('--update', type=bool, nargs='?', const=False,
                     help="""If true, delete all documents and download them again.
                     If false, continue from the last document""")
 
 args = parser.parse_args()
-batch_size = args.batchsize
+if args.batchsize:
+	batch_size = args.batchsize
+else:
+	batch_size = 20000
+
 update = args.update
 
 all_files = os.listdir(project_dir+"/data/raw/")
