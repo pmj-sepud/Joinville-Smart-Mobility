@@ -1,7 +1,7 @@
 ## ETL step by step:
 
 ### 1 - Collect raw data:
-Run "python get_waze_rawdata.py 20000 True" to download all data from MongoDB in the cloud, in batches of 20000 documents, and store them in json files in /data/raw/. The "True" option will delete all data that is currently in the /data/raw/ folder. If you wish to keep downloading from the last document in the folder, use the False option.
+Run "python get_waze_rawdata.py --batchsize 20000 --update True" to download all data from MongoDB in the cloud, in batches of 20000 documents, and store them in json files in /data/raw/. If True, the "--update" option will delete all data that is currently in the /data/raw/ folder. If you wish to keep downloading from the last document in the folder, ignore this option or set it to False.
 
 ### 2 - Tabulate data:
 Run "python store_tabulation.py" to read json files and store them in PostgreSQL tables accordingly, also in batches to fit in memory.
