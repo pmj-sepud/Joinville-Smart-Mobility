@@ -54,11 +54,11 @@ total_rows = collection.count()
 number_batches = math.ceil(total_rows / batch_size)
 width = len(str(total_rows))
 
-for i in range(0, number_batches):
+while num_docs < total_rows:
     start = timer()
     #Fetch documents
     records = list(collection.find({}, skip=(num_docs), limit=batch_size, sort=[("_id", ASCENDING)]))
-    now_processed = num_docs + batch_size
+    now_processed = num_docs + len(records)
 
     with open(project_dir+"/data/raw/wazerawdata_" + str(num_docs).zfill(width) +
              "_to_" + str(now_processed).zfill(width) + "_of_" + str(total_rows) + 

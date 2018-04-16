@@ -45,7 +45,9 @@ def tab_raw_data(datafile_s3_key):
     #get_file_name
     raw_data['file_name'] = datafile_s3_key
 
-    #get AJI hash
+    #get DataFile hash
+    import pdb
+    pdb.set_trace()
     aji_list = [json.dumps(raw_data['alerts'].iloc[0],sort_keys=True),
                 json.dumps(raw_data['jams'].iloc[0],sort_keys=True),
                 json.dumps(raw_data['irregularities'].iloc[0],sort_keys=True),
