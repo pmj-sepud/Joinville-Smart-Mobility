@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 from pandas.io.json import json_normalize
 import hashlib 
+import time
+import boto3
 
 from sqlalchemy import create_engine, exc, MetaData, select
 from sqlalchemy.engine.url import URL
@@ -25,7 +27,7 @@ def connect_database(database_dict):
 
     return meta
 
-def tab_raw_data(datafile):
+def tab_raw_data(s3key, s3object):
 
     def build_raw_df(rec_list):
         df_list = []
@@ -37,12 +39,12 @@ def tab_raw_data(datafile):
         return raw_data
 
     #read data file and convert it to a list of dicts.
-    with open(datafile, 'r') as file:
-        records = json.load(file)
-        if type(records) is str:
-            rec_list = json.loads(records)
-        elif type(records) is dict:
-            rec_list = [records]
+    file = s3object['Body'].read()
+    rec_list = json.loads(file)
+    if type(rec_list) is dict:
+        rec_list = [rec_list]
+    if type(rec_list) is not list:
+        raise Exception("It should be a list.")
 
     raw_data = build_raw_df(rec_list)
 
@@ -62,7 +64,7 @@ def tab_raw_data(datafile):
     raw_data['date_updated'] = raw_data['date_created']
 
     #get_file_name
-    raw_data['file_name'] = datafile
+    raw_data['file_name'] = s3key
 
     #get DataFile hash
     raw_data['json_hash'] = raw_data["rec_string"].apply(lambda x: hashlib.sha1(x.encode()).hexdigest()) 
@@ -72,6 +74,7 @@ def tab_raw_data(datafile):
 def sep_aji_records(raw_data, aji_type):
     recs = []
     for aji in raw_data[aji_type].iloc[0]:
+        aji["rootStartTime"] = raw_data.startTimeMillis.iloc[0]
         df_aji = json_normalize(aji)
         df_aji["rec"] = json.dumps(aji, sort_keys=True)
         recs.append(df_aji)
@@ -205,65 +208,84 @@ DATABASE = {
 
 meta = connect_database(DATABASE)
 
-#raw_data = tab_raw_data("/home/bogo/Downloads/wazedata_2018_03_20_20_18_43_166.json")
-raw_data = tab_raw_data(project_dir + "/data/raw/wazerawdata_81000_to_81152_of_81152_.txt")
+s3 = boto3.client('s3')
+bucket="scripted-waze-data-929310922828-test"
+#Iterate over all s3 raw data objects
+all_data_files = []
+paginator = s3.get_paginator('list_objects')
+page_iterator = paginator.paginate(Bucket=bucket)
+for page in page_iterator:
+    all_data_files += [c["Key"] for c in page["Contents"]]
 
-for _, row in raw_data.iterrows():
-    print("oi")
-    row = row.to_frame().transpose()
-    #Store data_file in database
-    col_dict = {"startTimeMillis": "start_time_millis",
-                "endTimeMillis": "end_time_millis",
-                "startTime": "start_time",
-                "endTime": "end_time",
-                "date_created": "date_created" ,
-                "date_updated": "date_updated",
-                "file_name": "file_name",
-                "json_hash": "json_hash",
-                }
+for file in all_data_files:
+    #Read raw file
+    obj = s3.get_object(Bucket=bucket, Key=file)
+    raw_data = tab_raw_data(file, obj)
 
-    raw_data_tosql = row.rename(columns=col_dict)
-    raw_data_tosql = raw_data_tosql[list(col_dict.values())]
-    try:
-        raw_data_tosql.to_sql(name="data_files", schema="waze", con=meta.bind, if_exists="append", index=False)
-    except exc.IntegrityError:
-        print("Data file is already stored in the relational database. Stopping process.")
-        sys.exit()
+    i=1
+    n = len(raw_data)
+    for _, row in raw_data.iterrows():
+        start = time.time()
+        row = row.to_frame().transpose()
+        #Store data_file in database
+        col_dict = {"startTimeMillis": "start_time_millis",
+                    "endTimeMillis": "end_time_millis",
+                    "startTime": "start_time",
+                    "endTime": "end_time",
+                    "date_created": "date_created" ,
+                    "date_updated": "date_updated",
+                    "file_name": "file_name",
+                    "json_hash": "json_hash",
+                    }
 
-    #Introspect data_file table
-    meta.reflect(schema="waze")
-    data_files = meta.tables["waze.data_files"]
-    datafile_result = (select([data_files.c.id]).where(data_files.c.json_hash == raw_data["json_hash"].iloc[0])
-                                               .execute()
-                                               .fetchall()
-                      )
-    if len(datafile_result) > 1:
-        raise Exception("There should be only one result")
+        raw_data_tosql = row.rename(columns=col_dict)
+        raw_data_tosql = raw_data_tosql[list(col_dict.values())]
+        try:
+            raw_data_tosql.to_sql(name="data_files", schema="waze", con=meta.bind, if_exists="append", index=False)
+        except exc.IntegrityError:
+            print("Data file is already stored in the relational database. Stopping process.")
+            break
 
-    datafile_id = datafile_result[0][0]
+        #Introspect data_file table
+        meta.reflect(schema="waze")
+        data_files = meta.tables["waze.data_files"]
+        datafile_result = (select([data_files.c.id]).where(data_files.c.json_hash == raw_data["json_hash"].iloc[0])
+                                                   .execute()
+                                                   .fetchall()
+                          )
+        if len(datafile_result) > 1:
+            raise Exception("There should be only one result")
 
-    #Store jams in database
-    jams_tosql = tab_jams(row)
-    if jams_tosql is not None:
-        jams_tosql["datafile_id"] = datafile_id
-        jams_tosql.to_sql(name="jams", schema="waze", con=meta.bind, if_exists="append", index=False,
-                              dtype={"line": typeJSON}
-                             )
+        datafile_id = datafile_result[0][0]
+
+        #Store jams in database
+        jams_tosql = tab_jams(row)
+        if jams_tosql is not None:
+            jams_tosql["datafile_id"] = datafile_id
+            jams_tosql.to_sql(name="jams", schema="waze", con=meta.bind, if_exists="append", index=False,
+                                  dtype={"line": typeJSON}
+                                 )
 
 
 
-    #Store alerts in database
-    alerts_tosql = tab_alerts(row)
-    if alerts_tosql is not None:
-        alerts_tosql["datafile_id"] = datafile_id
-        alerts_tosql.to_sql(name="alerts", schema="waze", con=meta.bind, if_exists="append", index=False,
-                              dtype={"location": typeJSON}
-                             )
+        #Store alerts in database
+        alerts_tosql = tab_alerts(row)
+        if alerts_tosql is not None:
+            alerts_tosql["datafile_id"] = datafile_id
+            alerts_tosql.to_sql(name="alerts", schema="waze", con=meta.bind, if_exists="append", index=False,
+                                  dtype={"location": typeJSON}
+                                 )
 
-    #Store irregularities in databse
-    irregs_tosql = tab_irregularities(row)
-    if irregs_tosql is not None:
-        irregs_tosql["datafile_id"] = datafile_id
-        irregs_tosql.to_sql(name="irregularities", schema="waze", con=meta.bind, if_exists="append", index=False,
-                              dtype={"line": typeJSON}
-                             )
+        #Store irregularities in databse
+        irregs_tosql = tab_irregularities(row)
+        if irregs_tosql is not None:
+            irregs_tosql["datafile_id"] = datafile_id
+            irregs_tosql.to_sql(name="irregularities", schema="waze", con=meta.bind, if_exists="append", index=False,
+                                  dtype={"line": typeJSON}
+                                 )
+
+        end = time.time()
+        elapsed = str(int(end-start))
+
+        print("Stored DataFile", str(i), "of", str(n),"from", file, "in", elapsed, "seconds.")
+        i += 1

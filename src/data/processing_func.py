@@ -53,25 +53,20 @@ def connect_database(database_dict):
     return meta
 
 def prep_section_tosql(section_path):
-    df_sections = pd.read_csv(section_path, decimal=",")
-
-    columns = {"objectid,N,10,0": "SctnIdArcgis",
-              "codlogra,N,10,0": "SctnCodRua",
-              "nomelog,C,254": "SctnDscNome",
-              "acumulo,N,10,0": "SctnQtdMetrosAcumulados",
-              "st_length_,N,19,11": "SctnQtdComprimento",
-              "Coord_x,N,19,11": "SctnDscCoordxUtmComeco",
-              "coord_y,N,19,11": "SctnDscCoordyUtmComeco",
-              "Cood_x_m,N,19,11": "SctnDscCoordxUtmMeio",
-              "Coord_y_m,N,19,11": "SctnDscCoordyUtmMeio",
-              "coord_x_f,N,19,11": "SctnDscCoordxUtmFinal",
-              "coord_y_f,N,19,11": "SctnDscCoordyUtmFinal",
+    columns = {"objectid": "id_argis",
+              "codlogra": "street_code",
+              "nomelog": "street_name",
+              "acumulo": "cumulative_meters",
+              "st_length_": "length",
+              "WKT": "wkt",
               }
+    cols = list(columns.values())
 
-    df_sections.rename(columns=columns, inplace=True)
-
-    cols = [v for k, v in columns.items() ]
-    df_sections = df_sections[cols]
+    df_sections = (pd.read_csv(section_path, encoding="latin1", decimal=",")
+                     .rename(columns=columns)
+                     .reindex(columns=cols)
+                     .dropna(subset=["street_name"])
+                  )
 
     return df_sections
 
