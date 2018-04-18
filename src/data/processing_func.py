@@ -6,6 +6,7 @@ from pyproj import Proj
 import geojson
 from pymongo import MongoClient, DESCENDING
 from shapely.geometry import LineString
+from shapely.wkt import loads as wkt_loads
 import geopandas as gpd
 import math
 from timeit import default_timer as timer
@@ -238,6 +239,10 @@ def UTM_to_lon_lat(l):
 
 def extract_geo_sections(meta, main_buffer=10, alt_buffer=20):
 
+    def read_wkt(df):
+        df["linestring"] = df.wkt.apply(lambda x: wkt_loads(x))
+        return df
+
     def get_main_direction(x):
         delta_x = x["MaxX"] - x["MinX"]
         delta_y = x["MaxY"] - x["MinY"]
@@ -246,55 +251,41 @@ def extract_geo_sections(meta, main_buffer=10, alt_buffer=20):
         else:
             return "Leste/Oeste"
 
-    section = meta.tables['Section']
+
+    meta.reflect(schema="geo")
+    section = meta.tables['geo.sections']
     sections_query = section.select()
     df_sections = pd.read_sql(sections_query, con=meta.bind)
-
-    df_sections["MinX"] = df_sections.apply(lambda x: min(x["SctnDscCoordxUtmComeco"],
-                                                     x["SctnDscCoordxUtmMeio"],
-                                                     x["SctnDscCoordxUtmFinal"]),
-                                        axis=1)
-
-    df_sections["MaxX"] = df_sections.apply(lambda x: max(x["SctnDscCoordxUtmComeco"],
-                                                         x["SctnDscCoordxUtmMeio"],
-                                                         x["SctnDscCoordxUtmFinal"]),
-                                            axis=1)
-
-    df_sections["MinY"] = df_sections.apply(lambda x: min(x["SctnDscCoordyUtmComeco"],
-                                                         x["SctnDscCoordyUtmMeio"],
-                                                         x["SctnDscCoordyUtmFinal"]),
-                                            axis=1)
-
-    df_sections["MaxY"] = df_sections.apply(lambda x: max(x["SctnDscCoordyUtmComeco"],
-                                                         x["SctnDscCoordyUtmMeio"],
-                                                         x["SctnDscCoordyUtmFinal"]),
-                                            axis=1)
+    df_sections = (df_sections
+                      .pipe(read_wkt)
+                      .assign(MinX=df_sections.linestring.apply(lambda x: x.bounds[0]),
+                              MinY=df_sections.linestring.apply(lambda x: x.bounds[1]),
+                              MaxX=df_sections.linestring.apply(lambda x: x.bounds[2]),
+                              MaxY=df_sections.linestring.apply(lambda x: x.bounds[3]),                           
+                             )
+                  )
 
     #Get Street Direction
-    gb = df_sections.groupby("SctnDscNome").agg({"MinX": "min",
-                                           "MaxX": "max",
-                                           "MinY": "min",
-                                           "MaxY": "max",})
+    gb = (df_sections.groupby("street_name")
+                    .agg({"MinX": "min",
+                          "MaxX": "max",
+                          "MinY": "min",
+                          "MaxY": "max",})
+         )
 
     gb["StreetDirection"] = gb.apply(lambda x: get_main_direction(x), axis=1)
     gb = gb["StreetDirection"]
-    df_sections = df_sections.join(gb, on="SctnDscNome")
+    df_sections = df_sections.join(gb, on="street_name")
 
-    #Get Section Direction
-    df_sections["SectionDirection"] = df_sections.apply(lambda x: get_main_direction(x), axis=1)
-
-    #Create Geometry shapes
-    df_sections["Street_line_XY"] = df_sections.apply(lambda x: [tuple([x['SctnDscCoordxUtmComeco'], x['SctnDscCoordyUtmComeco']]),
-                                                               tuple([x['SctnDscCoordxUtmMeio'], x['SctnDscCoordyUtmMeio']]),
-                                                               tuple([x['SctnDscCoordxUtmFinal'], x['SctnDscCoordyUtmFinal']]),
-                                                              ], axis=1)
-
-    df_sections["Street_line_LonLat"] = df_sections['Street_line_XY'].apply(UTM_to_lon_lat)
-    df_sections['section_LineString'] = df_sections.apply(lambda x: LineString(x['Street_line_XY']).buffer(main_buffer), axis=1)
-    df_sections['section_alt_LineString'] = df_sections.apply(lambda x: LineString(x['Street_line_XY']).buffer(alt_buffer), axis=1)
+    df_sections = (df_sections
+                  .assign(SectionDirection=df_sections.apply(lambda x: get_main_direction(x), axis=1),
+                          section_polygon=df_sections.linestring.apply(lambda x: x.buffer(main_buffer)),
+                          section_alt_polygon=df_sections.linestring.apply(lambda x: x.buffer(alt_buffer)),                        
+                         )
+                  )
 
     crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-    geo_sections = gpd.GeoDataFrame(df_sections, crs=crs, geometry="section_LineString")
+    geo_sections = gpd.GeoDataFrame(df_sections, crs=crs, geometry="section_polygon")
     geo_sections = geo_sections.to_crs({'init': 'epsg:4326'})
 
     return geo_sections

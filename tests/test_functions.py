@@ -18,7 +18,7 @@ from bson.objectid import ObjectId
 from pymongo import MongoClient
 from shapely.geometry import Point
 
-from src.data.processing_func import (collect_records, tabulate_records, json_to_df,
+from src.data.processing_func import (connect_database, collect_records, tabulate_records, json_to_df,
                                 tabulate_jams, lon_lat_to_UTM, UTM_to_lon_lat,
                                 prep_jams_tosql, prep_rawdata_tosql, extract_geo_sections,
                                 prep_section_tosql, store_jps)
@@ -184,31 +184,19 @@ class TestProcessingFunc(unittest.TestCase):
     def test_extract_geo_sections(self):
         #Connection and initial setup
         DATABASE = {
-            'drivername': os.environ.get("db_drivername"),
-            'host': os.environ.get("db_host"), 
-            'port': os.environ.get("db_port"),
-            'username': os.environ.get("db_username"),
-            'password': os.environ.get("db_password"),
-            'database': os.environ.get("db_database"),
+        'drivername': os.environ.get("db_drivername"),
+        'host': os.environ.get("db_host"), 
+        'port': os.environ.get("db_port"),
+        'username': os.environ.get("db_username"),
+        'password': os.environ.get("db_password"),
+        'database': os.environ.get("db_database"),
         }
-
-        db_url = URL(**DATABASE)
-        engine = create_engine(db_url)
-        meta = MetaData()
-        meta.bind = engine
-        meta.reflect()
+        meta = connect_database(DATABASE)
 
         test_geo_sections = extract_geo_sections(meta)
-        
-        self.assertEqual(test_geo_sections.shape, (16248, 15))
-        self.assertTrue(len(test_geo_sections['Street_line_XY'].iloc[0]), 3)
-        self.assertTrue(len(test_geo_sections['Street_line_LonLat'].iloc[0]), 3)
-        self.assertTrue(test_geo_sections['section_LineString'].iloc[0].distance(Point(test_geo_sections['Street_line_LonLat'].iloc[0][0])) < 1e-1)
-        self.assertTrue(math.isclose(test_geo_sections[['SctnDscCoordxUtmComeco', 'SctnDscCoordxUtmMeio', 'SctnDscCoordxUtmFinal']].values.min(), 699657, rel_tol=1e-6))
-        self.assertTrue(math.isclose(test_geo_sections[['SctnDscCoordxUtmComeco', 'SctnDscCoordxUtmMeio', 'SctnDscCoordxUtmFinal']].values.max(), 723463, rel_tol=1e-6))    
-        self.assertTrue(math.isclose(test_geo_sections[['SctnDscCoordyUtmComeco', 'SctnDscCoordyUtmMeio', 'SctnDscCoordyUtmFinal']].values.min(), 7078083, rel_tol=1e-7))
-        self.assertTrue(math.isclose(test_geo_sections[['SctnDscCoordyUtmComeco', 'SctnDscCoordyUtmMeio', 'SctnDscCoordyUtmFinal']].values.max(), 7108810, rel_tol=1e-7))
 
+        self.assertEqual(test_geo_sections.shape, (16148, 16))
+        self.assertEqual(test_geo_sections.geometry.name, "section_polygon")
 
 class TestLoadFunc(unittest.TestCase):
     DATABASE = {
