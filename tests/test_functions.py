@@ -7,6 +7,7 @@ import unittest
 import dotenv
 import pandas as pd
 import json
+import time
 from io import StringIO
 import pytz
 from sqlalchemy import create_engine, exc, MetaData
@@ -197,6 +198,8 @@ class TestProcessingFunc(unittest.TestCase):
 
         self.assertEqual(test_geo_sections.shape, (16148, 16))
         self.assertEqual(test_geo_sections.geometry.name, "section_polygon")
+        self.assertFalse((test_geo_sections.min_x > test_geo_sections.max_x).any())
+        self.assertFalse((test_geo_sections.min_y > test_geo_sections.max_y).any())
 
 class TestLoadFunc(unittest.TestCase):
     DATABASE = {

@@ -243,13 +243,15 @@ def extract_geo_sections(meta, main_buffer=10, alt_buffer=20):
         df["linestring"] = df.wkt.apply(lambda x: wkt_loads(x))
         return df
 
-    def get_main_direction(x):
-        delta_x = x["MaxX"] - x["MinX"]
-        delta_y = x["MaxY"] - x["MinY"]
+    def get_main_direction(min_x, min_y, max_x, max_y):
+        delta_x = max_x - min_x
+        delta_y = max_y - min_y
         if delta_y >= delta_x:
             return "Norte/Sul"
         else:
             return "Leste/Oeste"
+    def print_arg(x, y, z, w):
+        return type(x)
 
 
     meta.reflect(schema="geo")
@@ -258,29 +260,44 @@ def extract_geo_sections(meta, main_buffer=10, alt_buffer=20):
     df_sections = pd.read_sql(sections_query, con=meta.bind)
     df_sections = (df_sections
                       .pipe(read_wkt)
-                      .assign(MinX=df_sections.linestring.apply(lambda x: x.bounds[0]),
-                              MinY=df_sections.linestring.apply(lambda x: x.bounds[1]),
-                              MaxX=df_sections.linestring.apply(lambda x: x.bounds[2]),
-                              MaxY=df_sections.linestring.apply(lambda x: x.bounds[3]),                           
+                      .assign(min_x=lambda df: pd.Series([item.bounds[0] for _, item in df.linestring.iteritems()],
+                                                         index=df.index),
+                              min_y=lambda df: pd.Series([item.bounds[1] for _, item in df.linestring.iteritems()],
+                                                         index=df.index),
+                              max_x=lambda df: pd.Series([item.bounds[2] for _, item in df.linestring.iteritems()],
+                                                         index=df.index),
+                              max_y=lambda df: pd.Series([item.bounds[3] for _, item in df.linestring.iteritems()],
+                                                         index=df.index),                           
                              )
                   )
 
     #Get Street Direction
     gb = (df_sections.groupby("street_name")
-                    .agg({"MinX": "min",
-                          "MaxX": "max",
-                          "MinY": "min",
-                          "MaxY": "max",})
+                     .agg({"min_x": "min",
+                          "min_y": "min",
+                          "max_x": "max",
+                          "max_y": "max",})
+                     .assign(street_direction=lambda df: pd.Series([get_main_direction(min_x=row.min_x,
+                                                                                       min_y=row.min_y,
+                                                                                       max_x=row.max_x,
+                                                                                       max_y=row.max_y) for row in df.itertuples(index=False)],
+                                                                   index=df.index)
+                            )
+                     .loc[:, "street_direction"]
          )
 
-    gb["StreetDirection"] = gb.apply(lambda x: get_main_direction(x), axis=1)
-    gb = gb["StreetDirection"]
     df_sections = df_sections.join(gb, on="street_name")
 
     df_sections = (df_sections
-                  .assign(SectionDirection=df_sections.apply(lambda x: get_main_direction(x), axis=1),
-                          section_polygon=df_sections.linestring.apply(lambda x: x.buffer(main_buffer)),
-                          section_alt_polygon=df_sections.linestring.apply(lambda x: x.buffer(alt_buffer)),                        
+                  .assign(section_direction=lambda df: pd.Series([get_main_direction(min_x=row.min_x,
+                                                                                     min_y=row.min_y,
+                                                                                     max_x=row.max_x,
+                                                                                     max_y=row.max_y) for row in df.itertuples(index=False)],
+                                                                 index=df.index),
+                          section_polygon=lambda df: pd.Series([item.buffer(main_buffer) for _, item in df.linestring.iteritems()],
+                                                                index=df.index),
+                          section_alt_polygon=lambda df: pd.Series([item.buffer(alt_buffer) for _, item in df.linestring.iteritems()],
+                                                                index=df.index),                       
                          )
                   )
 
