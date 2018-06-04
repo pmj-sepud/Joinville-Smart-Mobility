@@ -242,6 +242,7 @@ def extract_geo_sections(meta, main_buffer=10, alt_buffer=20):
 
     def read_wkt(df):
         df["linestring"] = df.wkt.apply(lambda x: wkt_loads(x))
+        df = df.drop("wkt", axis=1)
         return df
 
     def get_main_direction(min_x, min_y, max_x, max_y):
@@ -310,7 +311,7 @@ def extract_geo_sections(meta, main_buffer=10, alt_buffer=20):
 
 def extract_geo_jams(meta, skip=0, limit=None, main_buffer=10, alt_buffer=20):
     meta.reflect(schema="waze")
-    jams = meta.tables['jams']
+    jams = meta.tables['waze.jams']
     jams_query = jams.select().order_by(jams.c.pub_utc_date).offset(skip).limit(limit)
     df_jams = pd.read_sql(jams_query, con=meta.bind)
     df_jams['jams_line_list'] = df_jams['line'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
