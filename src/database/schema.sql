@@ -128,7 +128,7 @@ CREATE SCHEMA IF NOT EXISTS geo;
 CREATE TABLE IF NOT EXISTS geo.sections
 (
 "id"                                SERIAL PRIMARY KEY NOT NULL,
-"id_argis"                          BIGINT NOT NULL,
+"id_arcgis"                         BIGINT NOT NULL,
 "street_code"                       INTEGER NOT NULL,
 "street_name"                       TEXT NOT NULL,
 "cumulative_meters"                 INTEGER NOT NULL,

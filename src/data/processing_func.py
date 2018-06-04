@@ -44,17 +44,15 @@ def connect_database(database_dict):
 
     DATABASE = database_dict
 
-    timezone = os.environ.get("timezone")
     db_url = URL(**DATABASE)
-    engine = create_engine(db_url, connect_args={"options": "-c timezone="+timezone})
+    engine = create_engine(db_url)
     meta = MetaData()
     meta.bind = engine
-    meta.reflect()
 
     return meta
 
 def prep_section_tosql(section_path):
-    columns = {"objectid": "id_argis",
+    columns = {"objectid": "id_arcgis",
               "codlogra": "street_code",
               "nomelog": "street_name",
               "acumulo": "cumulative_meters",
@@ -152,12 +150,14 @@ def prep_jams_tosql(df_jams):
 
     return jams_tosql
 
+# This code does not longer applies. Now there has to be a common cross-referencing algorithm to be used
+# by both GEO and OSM data. 
+"""
 def store_jps(meta, batch_size=20000):
     def check_directions(x):
-        """
         Check for jams whose direction is not aligned with the direction of the street or the section.
         Ex.: perpendicular streets, which would intersect with the jam.
-        """
+
         if x["MajorDirection"] == x["StreetDirection"]:
             return True
         elif x["MajorDirection"] == x["SectionDirection"]:
@@ -210,6 +210,7 @@ def store_jps(meta, batch_size=20000):
         end = timer()
         duration = str(round(end - start))
         print("Batch " + str(i+1) + " of " + str(number_batches) + " took " + duration + " s to be successfully stored.")
+"""
 
 def lon_lat_to_UTM(l):
     '''
@@ -308,14 +309,15 @@ def extract_geo_sections(meta, main_buffer=10, alt_buffer=20):
     return geo_sections
 
 def extract_geo_jams(meta, skip=0, limit=None, main_buffer=10, alt_buffer=20):
-    jam = meta.tables['Jam']
-    jams_query = jam.select().order_by(jam.c.JamDateStart).offset(skip).limit(limit)
+    meta.reflect(schema="waze")
+    jams = meta.tables['jams']
+    jams_query = jams.select().order_by(jams.c.pub_utc_date).offset(skip).limit(limit)
     df_jams = pd.read_sql(jams_query, con=meta.bind)
-    df_jams['jams_line_list'] = df_jams['JamDscCoordinatesLonLat'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
+    df_jams['jams_line_list'] = df_jams['line'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
     df_jams['jams_line_UTM'] = df_jams['jams_line_list'].apply(lon_lat_to_UTM)
     df_jams['jam_LineString'] = df_jams.apply(lambda x: LineString(x['jams_line_UTM']).buffer(main_buffer), axis=1)
     df_jams['jam_alt_LineString'] = df_jams.apply(lambda x: LineString(x['jams_line_UTM']).buffer(alt_buffer), axis=1)
-    df_jams[["LonDirection","LatDirection", "MajorDirection"]] = df_jams["JamDscCoordinatesLonLat"].apply(get_direction)
+    df_jams[["LonDirection","LatDirection", "MajorDirection"]] = df_jams["line"].apply(get_direction)
 
     crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
     geo_jams = gpd.GeoDataFrame(df_jams, crs=crs, geometry="jam_LineString")
