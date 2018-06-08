@@ -5,7 +5,7 @@ from pandas.io.json import json_normalize
 from pyproj import Proj
 import geojson
 from pymongo import MongoClient, DESCENDING
-from shapely.geometry import LineString
+from shapely.geometry import LineString, MultiLineString
 from shapely.wkt import loads as wkt_loads
 import geopandas as gpd
 import math
@@ -151,7 +151,121 @@ def prep_jams_tosql(df_jams):
     return jams_tosql
 
 # This code does not longer applies. Now there has to be a common cross-referencing algorithm to be used
-# by both GEO and OSM data. 
+# by both GEO and OSM data.
+
+def allocate_jams(jams, network, big_buffer, small_buffer, network_directional=False):
+
+    """
+    The geometry must be a Linestring for both GeoDataFrames
+    """
+
+    def get_main_direction(geometry):
+        if type(geometry) is LineString:
+            delta_x = geometry.coords[-1][0] - geometry.coords[0][0]
+            delta_y = geometry.coords[-1][1] - geometry.coords[0][1]
+        elif type(geometry) is MultiLineString:
+            first_line = list(geometry.geoms)[0]
+            last_line = list(geometry.geoms)[-1]
+
+            delta_x = last_line.coords[-1][0] - first_line.coords[0][0]
+            delta_y = last_line.coords[-1][1] - first_line.coords[0][1]
+        else:
+            raise Exception("geometry must be a Linestring or MultiLineString")
+
+        if network_directional == True:
+          if abs(delta_y) >= abs(delta_x):
+              if delta_y >=0:
+                  return "Norte"
+              else:
+                  return "Sul"
+          else:
+              if delta_x >=0:
+                  return "Leste"
+              else:
+                  return "Oeste"
+
+        if network_directional == False:
+          if abs(delta_y) >= abs(delta_x):
+              return "Norte/Sul"
+          else:
+              return "Leste/Oeste"
+
+    def check_directions(x):
+        """
+        Check for jams whose direction is not aligned with the direction of the street or the section.
+        Ex.: perpendicular streets, which would intersect with the jam.
+        """
+
+        if x["direction_left"] == x["direction_right"]:
+            return True
+        else:
+            return False
+
+    #check CRS
+    crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+    if jams.crs != crs:
+        jams = jams.to_crs(crs)
+        jams.crs = crs
+
+    if network.crs != crs:
+        network = network.to_crs(crs)
+        network.crs = crs
+
+    #Get linestring directions for both jams and network
+    jams_geometry_name = jams.geometry.name
+    network_geometry_name = network.geometry.name 
+
+    jams = (jams
+            .assign(direction=lambda gdf: pd.Series([get_main_direction(row[jams_geometry_name]) for _, row in gdf.iterrows()],
+                                                    index=gdf.index),                      
+            )
+    )
+
+    network = (network
+            .assign(direction=lambda gdf: pd.Series([get_main_direction(row[network_geometry_name]) for _, row in gdf.iterrows()],
+                                                    index=gdf.index),                      
+            )
+    )
+
+    #Create big and small polygons
+    jams['small_polygon'] = jams.apply(lambda x: x[jams_geometry_name].buffer(small_buffer), axis=1)
+    jams['big_polygon'] = jams.apply(lambda x: x[jams_geometry_name].buffer(big_buffer), axis=1)
+
+    network['small_polygon'] = network.apply(lambda x: x[network_geometry_name].buffer(small_buffer), axis=1)
+    network['big_polygon'] = network.apply(lambda x: x[network_geometry_name].buffer(big_buffer), axis=1)
+
+    #Find jams that contain network arcs entirely
+    jams = jams.set_geometry("big_polygon") #big polygon will contain
+    network = network.set_geometry("small_polygon") #small polygon will be contained
+    merge_1 = gpd.sjoin(jams, network, how="left", op="contains")
+    list_unmatched_jams = merge_1[merge_1["index_right"].isnull()].index.tolist()
+    merge_1.dropna(subset=["index_right"], inplace=True)
+
+    #Find jams that are entirely contained by network arcs
+    unallocated_jams = jams.loc[list_unmatched_jams].set_geometry("small_polygon") #small polygon will be contained
+    network = network.set_geometry("big_polygon") #big polygon will be contained
+
+    merge_2 = gpd.sjoin(unallocated_jams, network, how="left", op="within")
+    list_unmatched_jams = merge_2[merge_2["index_right"].isnull()].index.tolist()
+    merge_2.dropna(subset=["index_right"], inplace=True)
+
+    #Find jams that intersect but with plausible directions (avoid perpendiculars).
+    unallocated_jams = jams.loc[list_unmatched_jams].set_geometry("small_polygon") #both polygons should be thin.
+    network = network.set_geometry("small_polygon") #both polygons should be thin.
+
+    merge_3 = gpd.sjoin(unallocated_jams, network, how="inner", op="intersects")
+    merge_3["match_directions"] = merge_3.direction_left == merge_3.direction_right
+    merge_3 = merge_3[merge_3["match_directions"]] #delete perpendicular streets
+    merge_3.drop(labels="match_directions", axis=1, inplace=True)
+
+    #Concatenate three dataframes
+    allocated_jams = pd.concat([merge_1,
+                                merge_2,
+                                merge_3], ignore_index=True)
+
+
+    return allocated_jams
+
 """
 def store_jps(meta, batch_size=20000):
     def check_directions(x):
@@ -238,7 +352,7 @@ def UTM_to_lon_lat(l):
         
     return list_of_coordinates
 
-def extract_geo_sections(meta, main_buffer=10, alt_buffer=20):
+def extract_geo_sections(meta):
 
     def read_wkt(df):
         df["linestring"] = df.wkt.apply(lambda x: wkt_loads(x))
@@ -252,14 +366,11 @@ def extract_geo_sections(meta, main_buffer=10, alt_buffer=20):
             return "Norte/Sul"
         else:
             return "Leste/Oeste"
-    def print_arg(x, y, z, w):
-        return type(x)
-
 
     meta.reflect(schema="geo")
     section = meta.tables['geo.sections']
     sections_query = section.select()
-    df_sections = pd.read_sql(sections_query, con=meta.bind)
+    df_sections = pd.read_sql(sections_query, con=meta.bind, index_col="id")
     df_sections = (df_sections
                       .pipe(read_wkt)
                       .assign(min_x=lambda df: pd.Series([item.bounds[0] for _, item in df.linestring.iteritems()],
@@ -295,34 +406,40 @@ def extract_geo_sections(meta, main_buffer=10, alt_buffer=20):
                                                                                      min_y=row.min_y,
                                                                                      max_x=row.max_x,
                                                                                      max_y=row.max_y) for row in df.itertuples(index=False)],
-                                                                 index=df.index),
-                          section_polygon=lambda df: pd.Series([item.buffer(main_buffer) for _, item in df.linestring.iteritems()],
-                                                                index=df.index),
-                          section_alt_polygon=lambda df: pd.Series([item.buffer(alt_buffer) for _, item in df.linestring.iteritems()],
-                                                                index=df.index),                       
+                                                                 index=df.index),                      
                          )
                   )
 
     crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-    geo_sections = gpd.GeoDataFrame(df_sections, crs=crs, geometry="section_polygon")
-    geo_sections = geo_sections.to_crs({'init': 'epsg:4326'})
+    geo_sections = gpd.GeoDataFrame(df_sections, crs=crs, geometry="linestring")
+    #geo_sections = geo_sections.to_crs({'init': 'epsg:4326'})
 
     return geo_sections
 
-def extract_geo_jams(meta, skip=0, limit=None, main_buffer=10, alt_buffer=20):
+def extract_geo_jams(meta, skip=0, limit=None):
     meta.reflect(schema="waze")
     jams = meta.tables['waze.jams']
-    jams_query = jams.select().order_by(jams.c.pub_utc_date).offset(skip).limit(limit)
+    jams_query = select([jams.c.uuid,
+                          jams.c.pub_utc_date,
+                          jams.c.street,
+                          jams.c.delay,
+                          jams.c.speed,
+                          jams.c.speed_kmh,
+                          jams.c.length,
+                          jams.c.level,
+                          jams.c.line,
+                          jams.c.datafile_id,
+                             ]).order_by(jams.c.pub_utc_date).offset(skip).limit(limit)
     df_jams = pd.read_sql(jams_query, con=meta.bind)
     df_jams['jams_line_list'] = df_jams['line'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
     df_jams['jams_line_UTM'] = df_jams['jams_line_list'].apply(lon_lat_to_UTM)
-    df_jams['jam_LineString'] = df_jams.apply(lambda x: LineString(x['jams_line_UTM']).buffer(main_buffer), axis=1)
-    df_jams['jam_alt_LineString'] = df_jams.apply(lambda x: LineString(x['jams_line_UTM']).buffer(alt_buffer), axis=1)
+    df_jams['linestring'] = df_jams.apply(lambda x: LineString(x['jams_line_UTM']), axis=1)
+    
     df_jams[["LonDirection","LatDirection", "MajorDirection"]] = df_jams["line"].apply(get_direction)
 
     crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-    geo_jams = gpd.GeoDataFrame(df_jams, crs=crs, geometry="jam_LineString")
-    geo_jams = geo_jams.to_crs({'init': 'epsg:4326'})
+    geo_jams = gpd.GeoDataFrame(df_jams, crs=crs, geometry="linestring")
+    #geo_jams = geo_jams.to_crs({'init': 'epsg:4326'})
 
     return geo_jams
 
