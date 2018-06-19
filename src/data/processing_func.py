@@ -14,32 +14,6 @@ from timeit import default_timer as timer
 from sqlalchemy import MetaData, create_engine, extract, select
 from sqlalchemy.engine.url import URL
 
-def collect_records(collection, limit=None):
-    
-    if limit:
-        records = list(collection.find(sort=[("_id", DESCENDING)]).limit(limit))
-    else:
-        records = list(collection.find(sort=[("_id", DESCENDING)]))
-
-    return records
-
-def tabulate_records(records):
-        
-    raw_data = pd.DataFrame(records)
-    raw_data['startTime'] = pd.to_datetime(raw_data['startTime'].str[:-4])
-    raw_data['endTime'] = pd.to_datetime(raw_data['endTime'].str[:-4])
-
-    raw_data['startTime'] = raw_data['startTime'].dt.tz_localize("UTC")
-    raw_data['endTime'] = raw_data['endTime'].dt.tz_localize("UTC")
-
-    raw_data['startTime'] = raw_data['startTime'].dt.tz_convert("America/Sao_Paulo")
-    raw_data['endTime'] = raw_data['endTime'].dt.tz_convert("America/Sao_Paulo")
-
-    raw_data['startTime'] = raw_data['startTime'].astype(pd.Timestamp)
-    raw_data['endTime'] = raw_data['endTime'].astype(pd.Timestamp)
-
-    return raw_data
-
 def connect_database(database_dict):
 
     DATABASE = database_dict
@@ -69,94 +43,10 @@ def prep_section_tosql(section_path):
 
     return df_sections
 
-
-def prep_rawdata_tosql(raw_data):
-
-    raw_data_tosql = raw_data[["startTime", "endTime"]]
-    rename_dict = {"startTime": "MgrcDateStart",
-                   "endTime": "MgrcDateEnd",
-                  }
-
-    raw_data_tosql = raw_data_tosql.rename(columns=rename_dict)
-
-    return raw_data_tosql
-
-
-def json_to_df(row, json_column):
-    df_from_json = pd.io.json.json_normalize(row[json_column]).add_prefix(json_column + '_')    
-    df = pd.concat([row]*len(df_from_json), axis=1).transpose()    
-    df.reset_index(inplace=True, drop=True)    
-    
-    return pd.concat([df, df_from_json], axis=1)
-
-def tabulate_jams(raw_data):
-    if 'jams' in raw_data:
-        df_jams_cleaned = raw_data[~(raw_data['jams'].isnull())]
-        df_jams = pd.concat([json_to_df(row, 'jams') for _, row in df_jams_cleaned.iterrows()])
-        df_jams.reset_index(inplace=True, drop=True)
-    else:
-        raise Exception()
-        
-    return df_jams
-
-
-def tabulate_alerts(raw_data):
-    if 'alerts' in raw_data:
-        df_alerts_cleaned = raw_data[~(raw_data['alerts'].isnull())]
-        df_alerts = pd.concat([json_to_df(row, 'alerts') for _, row in df_alerts_cleaned.iterrows()])
-        df_alerts.reset_index(inplace=True, drop=True)
-    else:
-        raise Exception("No Alerts in the given period")
-        
-    return df_alerts
-
-    
-def tabulate_irregularities(raw_data):
-    if 'irregularities' in raw_data:
-        df_irregularities_cleaned = raw_data[~(raw_data['irregularities'].isnull())]
-        df_irregularities = pd.concat([json_to_df(row, 'irregularities') for _, row in df_irregularities_cleaned.iterrows()])
-        df_irregularities.reset_index(inplace=True, drop=True)
-    else:
-        raise Exception("No Irregularities in the given period")
-        
-    return df_irregularities
-
-def prep_jams_tosql(df_jams):
-    rename_dict = {"_id": "JamObjectId",
-                   "endTime": "JamDateEnd",
-                   "startTime": "JamDateStart",
-                   "jams_city": "JamDscCity",
-                   "jams_delay": "JamTimeDelayInSeconds",
-                   "jams_endNode": "JamDscStreetEndNode",
-                   "jams_length": "JamQtdLengthMeters",
-                   "jams_level": "JamIndLevelOfTraffic",
-                   "jams_pubMillis": "JamTimePubMillis",
-                   "jams_roadType": "JamDscRoadType",
-                   "jams_segments": "JamDscSegments",
-                   "jams_speed": "JamSpdMetersPerSecond",
-                   "jams_street": "JamDscStreet",
-                   "jams_turnType": "JamDscTurnType",
-                   "jams_type": "JamDscType",
-                   "jams_uuid": "JamUuid",
-                   "jams_line": "JamDscCoordinatesLonLat",
-                  }
-
-    col_list = list(rename_dict.values())
-    jams_tosql = df_jams.rename(columns=rename_dict)
-    jams_tosql["JamObjectId"] = jams_tosql["JamObjectId"].astype(str)
-
-    actual_col_list = list(set(list(jams_tosql)).intersection(set(col_list)))
-    jams_tosql = jams_tosql[actual_col_list]
-
-    return jams_tosql
-
-# This code does not longer applies. Now there has to be a common cross-referencing algorithm to be used
-# by both GEO and OSM data.
-
 def allocate_jams(jams, network, big_buffer, small_buffer, network_directional=False):
 
     """
-    The geometry must be a Linestring for both GeoDataFrames
+    Common cross-referencing algorithm to be used by both ArcGis and OSM data.
     """
 
     def get_main_direction(geometry):
@@ -266,92 +156,6 @@ def allocate_jams(jams, network, big_buffer, small_buffer, network_directional=F
 
     return allocated_jams
 
-"""
-def store_jps(meta, batch_size=20000):
-    def check_directions(x):
-        Check for jams whose direction is not aligned with the direction of the street or the section.
-        Ex.: perpendicular streets, which would intersect with the jam.
-
-        if x["MajorDirection"] == x["StreetDirection"]:
-            return True
-        elif x["MajorDirection"] == x["SectionDirection"]:
-            return True
-        else:
-            return False
-
-    geo_sections = extract_geo_sections(meta, main_buffer=10, alt_buffer=20) #thin polygon
-
-    ##Divide the in batches
-    total_rows, = meta.tables["Jam"].count().execute().first()
-    number_batches = math.ceil(total_rows / batch_size)
-
-    for i in range(0, number_batches):
-        start = timer()
-        geo_jams = extract_geo_jams(meta, skip=i*batch_size, limit=batch_size, main_buffer=20, alt_buffer=10) #fat polygon
-
-        #Find jams that contain sections entirely
-        jams_per_section_contains = gpd.sjoin(geo_jams, geo_sections, how="left", op="contains")
-        ids_not_located_contains = jams_per_section_contains[jams_per_section_contains["SctnId"].isnull()]["JamId"]
-        jams_per_section_contains.dropna(subset=["SctnId"], inplace=True)
-
-        #Find jams that are entirely within sections
-        jams_left_from_contains = geo_jams.loc[geo_jams["JamId"].\
-                                  isin(ids_not_located_contains)].\
-                                  set_geometry("jam_alt_LineString") #thin jam polygon
-
-        geo_sections = geo_sections.set_geometry("section_alt_LineString") #fat section polygon
-        jams_per_section_within = gpd.sjoin(jams_left_from_contains, geo_sections, how="left", op="within")
-        ids_not_located_within = jams_per_section_within[jams_per_section_within["SctnId"].isnull()]["JamId"]
-        jams_per_section_within.dropna(subset=["SctnId"], inplace=True)
-
-        #Find jams that intersect but with plausible directions (avoid perpendiculars).
-        geo_sections = geo_sections.set_geometry("section_LineString") #Both polygons should be thin.
-        jams_left_from_within = geo_jams.loc[geo_jams["JamId"].isin(ids_not_located_within)]
-        jams_per_section_intersects = gpd.sjoin(jams_left_from_within, geo_sections, how="inner", op="intersects")
-        jams_per_section_intersects["CheckDirections"] = jams_per_section_intersects.apply(lambda x: check_directions(x), axis=1)
-        jams_per_section_intersects = jams_per_section_intersects[jams_per_section_intersects["CheckDirections"]] #delete perpendicular streets
-        jams_per_section_intersects.drop(labels="CheckDirections", axis=1, inplace=True)
-
-        #Concatenate three dataframes
-        jams_per_section = pd.concat([jams_per_section_contains,
-                                      jams_per_section_within,
-                                      jams_per_section_intersects], ignore_index=True)
-
-        #Store in database
-        jams_per_section = jams_per_section[["JamDateStart", "JamUuid", "SctnId"]]  
-        jams_per_section["JamDateStart"] = jams_per_section["JamDateStart"].astype(pd.Timestamp)
-        jams_per_section.to_sql("JamPerSection", con=meta.bind, if_exists="append", index=False)
-        end = timer()
-        duration = str(round(end - start))
-        print("Batch " + str(i+1) + " of " + str(number_batches) + " took " + duration + " s to be successfully stored.")
-"""
-
-def lon_lat_to_UTM(l):
-    '''
-    Convert list of Lat/Lon to UTM coordinates
-    '''
-    proj = Proj("+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
-    list_of_coordinates = []
-    for t in l:
-        lon, lat = t
-        X, Y = proj(lon,lat)
-        list_of_coordinates.append(tuple([X, Y]))
-        
-    return list_of_coordinates
-
-def UTM_to_lon_lat(l):
-    '''
-    Convert df_jams from UTM coordinates to Lat/Lon
-    '''
-    proj = Proj("+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
-    list_of_coordinates = []
-    for t in l:
-        X, Y = t
-        lon, lat = proj(X,Y, inverse=True)
-        list_of_coordinates.append(tuple([lon, lat]))
-        
-    return list_of_coordinates
-
 def extract_geo_sections(meta):
 
     def read_wkt(df):
@@ -416,30 +220,83 @@ def extract_geo_sections(meta):
 
     return geo_sections
 
-def extract_geo_jams(meta, skip=0, limit=None):
+def extract_df_jams(meta, date_begin, date_end, weekends=True, periods=None):
     meta.reflect(schema="waze")
     jams = meta.tables['waze.jams']
-    jams_query = select([jams.c.uuid,
-                          jams.c.pub_utc_date,
-                          jams.c.street,
-                          jams.c.delay,
-                          jams.c.speed,
-                          jams.c.speed_kmh,
-                          jams.c.length,
-                          jams.c.level,
-                          jams.c.line,
-                          jams.c.datafile_id,
-                             ]).order_by(jams.c.pub_utc_date).offset(skip).limit(limit)
-    df_jams = pd.read_sql(jams_query, con=meta.bind)
-    df_jams['jams_line_list'] = df_jams['line'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
-    df_jams['jams_line_UTM'] = df_jams['jams_line_list'].apply(lon_lat_to_UTM)
-    df_jams['linestring'] = df_jams.apply(lambda x: LineString(x['jams_line_UTM']), axis=1)
+    data_files = meta.tables["waze.data_files"]
+
+    query = select([data_files.c.start_time,
+                jams.c.uuid,
+                jams.c.level,
+                jams.c.length,
+                jams.c.speed_kmh,
+                jams.c.delay,
+                jams.c.line])
     
+    query = query.select_from(jams.join(data_files)).where(data_files.c.start_time.between(date_begin, date_end))
+
+    if not weekends:
+        query = query.where(extract("isodow", data_files.c.start_time).in_(list(range(1,6))))
+
+    if periods:
+        or_list=[]
+        for t in periods:
+            or_list.append(and_(extract("hour", data_files.c.start_time)>=t[0],
+                                extract("hour", data_files.c.start_time)<t[1]
+                                )
+                          )
+        query = query.where(or_(*or_list))
+    
+    if not weekends:
+        query = query.where(extract("isodow", data_files.c.start_time).in_(list(range(1,6))))
+
+    if periods:
+        or_list=[]
+        for t in periods:
+            or_list.append(and_(extract("hour", data_files.c.start_time)>=t[0],
+                                extract("hour", data_files.c.start_time)<t[1]
+                                )
+                          )
+        query = query.where(or_(*or_list))
+        
+    query = query.order_by(desc(data_files.c.start_time))
+
+    df_jams = pd.read_sql(query, meta.bind)
+        
+    return df_jams
+
+def transform_geo_jams(df_jams):
+
+    #Get Directions
     df_jams[["LonDirection","LatDirection", "MajorDirection"]] = df_jams["line"].apply(get_direction)
 
-    crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-    geo_jams = gpd.GeoDataFrame(df_jams, crs=crs, geometry="linestring")
-    #geo_jams = geo_jams.to_crs({'init': 'epsg:4326'})
+    #Get date information
+    df_jams["start_time"] = pd.to_datetime(df_jams["start_time"], utc=True)
+    df_jams["date"] = df_jams["start_time"].dt.date
+    df_jams["hour"] = df_jams["start_time"].astype(str).str[11:13].astype(int)
+    df_jams["minute"] = df_jams["start_time"].astype(str).str[14:16].astype(int)
+    df_jams["period"] = np.sign(df_jams["hour"]-12)
+    df_jams["start_time"] = df_jams["start_time"].dt.tz_convert("America/Sao_Paulo")
+
+    #Get minute bins
+    bins = [0, 14, 29, 44, 59]
+    labels = []
+    for i in range(1,len(bins)):
+        if i==1:
+            labels.append(str(bins[i-1]) + " a " + str(bins[i]))
+        else:
+            labels.append(str(bins[i-1]+1) + " a " + str(bins[i]))
+
+    df_jams['minute_bin'] = pd.cut(df_jams["minute"], bins, labels=labels, include_lowest=True)
+
+    #Get Geometries
+    df_jams['jams_line_list'] = df_jams['line'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
+    #df_jams['jams_line_UTM'] = df_jams['jams_line_list'].apply(lon_lat_to_UTM)
+    df_jams['linestring'] = df_jams.apply(lambda x: LineString(x['jams_line_list']), axis=1)
+    crs_1 = {'init': 'epsg:4326'}
+    geo_jams = gpd.GeoDataFrame(df_jams, crs=crs_1, geometry="linestring")
+    crs_2 = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+    geo_jams = geo_jams.to_crs(crs_2)
 
     return geo_jams
 
@@ -473,24 +330,24 @@ def get_direction(coord_list):
     y_end = coord_list[num_coords-1]["y"]
     delta_y = (y_end-y_start)
     if delta_y >= 0:
-        lat_direction = "Norte"
+        lat_direction = "North"
     else:
-        lat_direction = "Sul"
+        lat_direction = "South"
         
     #East/West
     x_start = coord_list[0]["x"]
     x_end = coord_list[num_coords-1]["x"]
     delta_x = (x_end-x_start)
     if delta_x >= 0:
-        lon_direction = "Leste"
+        lon_direction = "East"
     else:
-        lon_direction = "Oeste"
+        lon_direction = "West"
 
     #MajorDirection
     if abs(delta_y) > abs(delta_x):
-        major_direction = "Norte/Sul"
+        major_direction = "North/South"
     else:
-        major_direction = "Leste/Oeste"
+        major_direction = "East/West"
 
         
     return pd.Series([lon_direction, lat_direction, major_direction])
