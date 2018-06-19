@@ -63,22 +63,22 @@ def allocate_jams(jams, network, big_buffer, small_buffer, network_directional=F
             raise Exception("geometry must be a Linestring or MultiLineString")
 
         if network_directional == True:
-          if abs(delta_y) >= abs(delta_x):
-              if delta_y >=0:
-                  return "Norte"
-              else:
-                  return "Sul"
-          else:
-              if delta_x >=0:
-                  return "Leste"
-              else:
-                  return "Oeste"
+            if abs(delta_y) >= abs(delta_x):
+                if delta_y >=0:
+                    return "Norte"
+                else:
+                    return "Sul"
+            else:
+                if delta_x >=0:
+                    return "Leste"
+                else:
+                    return "Oeste"
 
         if network_directional == False:
-          if abs(delta_y) >= abs(delta_x):
-              return "Norte/Sul"
-          else:
-              return "Leste/Oeste"
+            if abs(delta_y) >= abs(delta_x):
+                return "Norte/Sul"
+            else:
+                return "Leste/Oeste"
 
     def check_directions(x):
         """
@@ -118,42 +118,45 @@ def allocate_jams(jams, network, big_buffer, small_buffer, network_directional=F
     )
 
     #Create big and small polygons
-    jams['small_polygon'] = jams.apply(lambda x: x[jams_geometry_name].buffer(small_buffer), axis=1)
-    jams['big_polygon'] = jams.apply(lambda x: x[jams_geometry_name].buffer(big_buffer), axis=1)
+    jams['jams_small_polygon'] = jams.apply(lambda x: x[jams_geometry_name].buffer(small_buffer), axis=1)
+    jams['jams_big_polygon'] = jams.apply(lambda x: x[jams_geometry_name].buffer(big_buffer), axis=1)
 
-    network['small_polygon'] = network.apply(lambda x: x[network_geometry_name].buffer(small_buffer), axis=1)
-    network['big_polygon'] = network.apply(lambda x: x[network_geometry_name].buffer(big_buffer), axis=1)
+    network['net_small_polygon'] = network.apply(lambda x: x[network_geometry_name].buffer(small_buffer), axis=1)
+    network['net_big_polygon'] = network.apply(lambda x: x[network_geometry_name].buffer(big_buffer), axis=1)
 
     #Find jams that contain network arcs entirely
-    jams = jams.set_geometry("big_polygon") #big polygon will contain
-    network = network.set_geometry("small_polygon") #small polygon will be contained
-    merge_1 = gpd.sjoin(jams, network, how="left", op="contains")
-    list_unmatched_jams = merge_1[merge_1["index_right"].isnull()].index.tolist()
-    merge_1.dropna(subset=["index_right"], inplace=True)
+    jams = jams.set_geometry("jams_big_polygon") #big polygon will contain
+    network = network.set_geometry("net_small_polygon") #small polygon will be contained
+    merge_1 = gpd.sjoin(jams, network, how="left", op="contains", lsuffix='jams', rsuffix='net')
+    list_unmatched_jams = merge_1[merge_1["index_net"].isnull()].index.tolist()
+    merge_1.dropna(subset=["index_net"], inplace=True)
+    merge_1.drop(labels="net_big_polygon", axis=1, inplace=True)
 
     #Find jams that are entirely contained by network arcs
-    unallocated_jams = jams.loc[list_unmatched_jams].set_geometry("small_polygon") #small polygon will be contained
-    network = network.set_geometry("big_polygon") #big polygon will be contained
+    unallocated_jams = jams.loc[list_unmatched_jams].set_geometry("jams_small_polygon") #small polygon will be contained
+    network = network.set_geometry("net_big_polygon") #big polygon will be contained
 
-    merge_2 = gpd.sjoin(unallocated_jams, network, how="left", op="within")
-    list_unmatched_jams = merge_2[merge_2["index_right"].isnull()].index.tolist()
-    merge_2.dropna(subset=["index_right"], inplace=True)
+    merge_2 = gpd.sjoin(unallocated_jams, network, how="left", op="within", lsuffix='jams', rsuffix='net')
+    list_unmatched_jams = merge_2[merge_2["index_net"].isnull()].index.tolist()
+    merge_2.dropna(subset=["index_net"], inplace=True)
+    merge_2.drop(labels="net_small_polygon", axis=1, inplace=True)
 
     #Find jams that intersect but with plausible directions (avoid perpendiculars).
-    unallocated_jams = jams.loc[list_unmatched_jams].set_geometry("small_polygon") #both polygons should be thin.
-    network = network.set_geometry("small_polygon") #both polygons should be thin.
+    unallocated_jams = jams.loc[list_unmatched_jams].set_geometry("jams_small_polygon") #both polygons should be thin.
+    network = network.set_geometry("net_small_polygon") #both polygons should be thin.
 
-    merge_3 = gpd.sjoin(unallocated_jams, network, how="inner", op="intersects")
-    merge_3["match_directions"] = merge_3.direction_left == merge_3.direction_right
+    merge_3 = gpd.sjoin(unallocated_jams, network, how="inner", op="intersects", lsuffix='jams', rsuffix='net')
+    merge_3["match_directions"] = merge_3.direction_jams == merge_3.direction_net
     merge_3 = merge_3[merge_3["match_directions"]] #delete perpendicular streets
-    merge_3.drop(labels="match_directions", axis=1, inplace=True)
+    merge_3.drop(labels=["match_directions", "net_big_polygon"] , axis=1, inplace=True)
 
     #Concatenate three dataframes
     allocated_jams = pd.concat([merge_1,
                                 merge_2,
                                 merge_3], ignore_index=True)
-
-
+    
+    allocated_jams.drop(labels=["jams_small_polygon", "jams_big_polygon"] , axis=1, inplace=True)
+    
     return allocated_jams
 
 def extract_geo_sections(meta):
