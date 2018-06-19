@@ -11,7 +11,7 @@ import geopandas as gpd
 import math
 from timeit import default_timer as timer
 
-from sqlalchemy import MetaData, create_engine, extract, select
+from sqlalchemy import MetaData, create_engine, extract, select, desc
 from sqlalchemy.engine.url import URL
 
 def connect_database(database_dict):
