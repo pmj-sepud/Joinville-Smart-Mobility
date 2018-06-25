@@ -25,6 +25,87 @@ def connect_database(database_dict):
 
     return meta
 
+def extract_df_jams(meta, date_begin, date_end, weekends=True, periods=None):
+    meta.reflect(schema="waze")
+    jams = meta.tables['waze.jams']
+    data_files = meta.tables["waze.data_files"]
+
+    query = select([data_files.c.start_time,
+                    data_files.c.id,
+                    jams.c.uuid,
+                    jams.c.level,
+                    jams.c.length,
+                    jams.c.speed_kmh,
+                    jams.c.delay,
+                    jams.c.line])
+    
+    query = query.select_from(jams.join(data_files)).where(data_files.c.start_time.between(date_begin, date_end))
+
+    if not weekends:
+        query = query.where(extract("isodow", data_files.c.start_time).in_(list(range(1,6))))
+
+    if periods:
+        or_list=[]
+        for t in periods:
+            or_list.append(and_(extract("hour", data_files.c.start_time)>=t[0],
+                                extract("hour", data_files.c.start_time)<t[1]
+                                )
+                          )
+        query = query.where(or_(*or_list))
+    
+    if not weekends:
+        query = query.where(extract("isodow", data_files.c.start_time).in_(list(range(1,6))))
+
+    if periods:
+        or_list=[]
+        for t in periods:
+            or_list.append(and_(extract("hour", data_files.c.start_time)>=t[0],
+                                extract("hour", data_files.c.start_time)<t[1]
+                                )
+                          )
+        query = query.where(or_(*or_list))
+        
+    query = query.order_by(desc(data_files.c.start_time))
+
+    df_jams = pd.read_sql(query, meta.bind)
+        
+    return df_jams
+
+def transform_geo_jams(df_jams):
+
+    #Get Directions
+    df_jams[["LonDirection","LatDirection", "MajorDirection"]] = df_jams["line"].apply(get_direction)
+
+    #Get date information
+    df_jams["start_time"] = pd.to_datetime(df_jams["start_time"], utc=True)
+    df_jams["date"] = df_jams["start_time"].dt.date
+    df_jams["hour"] = df_jams["start_time"].astype(str).str[11:13].astype(int)
+    df_jams["minute"] = df_jams["start_time"].astype(str).str[14:16].astype(int)
+    df_jams["period"] = np.sign(df_jams["hour"]-12)
+    df_jams["start_time"] = df_jams["start_time"].dt.tz_convert("America/Sao_Paulo")
+
+    #Get minute bins
+    bins = [0, 14, 29, 44, 59]
+    labels = []
+    for i in range(1,len(bins)):
+        if i==1:
+            labels.append(str(bins[i-1]) + " a " + str(bins[i]))
+        else:
+            labels.append(str(bins[i-1]+1) + " a " + str(bins[i]))
+
+    df_jams['minute_bin'] = pd.cut(df_jams["minute"], bins, labels=labels, include_lowest=True)
+
+    #Get Geometries
+    df_jams['jams_line_list'] = df_jams['line'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
+    #df_jams['jams_line_UTM'] = df_jams['jams_line_list'].apply(lon_lat_to_UTM)
+    df_jams['linestring'] = df_jams.apply(lambda x: LineString(x['jams_line_list']), axis=1)
+    crs_1 = {'init': 'epsg:4326'}
+    geo_jams = gpd.GeoDataFrame(df_jams, crs=crs_1, geometry="linestring")
+    crs_2 = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+    geo_jams = geo_jams.to_crs(crs_2)
+
+    return geo_jams
+
 def wkt_to_df(wkt_file):
     columns = {"objectid": "id_arcgis",
               "codlogra": "street_code",
@@ -220,86 +301,6 @@ def allocate_jams(jams, network, big_buffer, small_buffer, network_directional=F
     allocated_jams.drop(labels=["jams_small_polygon", "jams_big_polygon"] , axis=1, inplace=True)
     
     return allocated_jams
-
-def extract_df_jams(meta, date_begin, date_end, weekends=True, periods=None):
-    meta.reflect(schema="waze")
-    jams = meta.tables['waze.jams']
-    data_files = meta.tables["waze.data_files"]
-
-    query = select([data_files.c.start_time,
-                jams.c.uuid,
-                jams.c.level,
-                jams.c.length,
-                jams.c.speed_kmh,
-                jams.c.delay,
-                jams.c.line])
-    
-    query = query.select_from(jams.join(data_files)).where(data_files.c.start_time.between(date_begin, date_end))
-
-    if not weekends:
-        query = query.where(extract("isodow", data_files.c.start_time).in_(list(range(1,6))))
-
-    if periods:
-        or_list=[]
-        for t in periods:
-            or_list.append(and_(extract("hour", data_files.c.start_time)>=t[0],
-                                extract("hour", data_files.c.start_time)<t[1]
-                                )
-                          )
-        query = query.where(or_(*or_list))
-    
-    if not weekends:
-        query = query.where(extract("isodow", data_files.c.start_time).in_(list(range(1,6))))
-
-    if periods:
-        or_list=[]
-        for t in periods:
-            or_list.append(and_(extract("hour", data_files.c.start_time)>=t[0],
-                                extract("hour", data_files.c.start_time)<t[1]
-                                )
-                          )
-        query = query.where(or_(*or_list))
-        
-    query = query.order_by(desc(data_files.c.start_time))
-
-    df_jams = pd.read_sql(query, meta.bind)
-        
-    return df_jams
-
-def transform_geo_jams(df_jams):
-
-    #Get Directions
-    df_jams[["LonDirection","LatDirection", "MajorDirection"]] = df_jams["line"].apply(get_direction)
-
-    #Get date information
-    df_jams["start_time"] = pd.to_datetime(df_jams["start_time"], utc=True)
-    df_jams["date"] = df_jams["start_time"].dt.date
-    df_jams["hour"] = df_jams["start_time"].astype(str).str[11:13].astype(int)
-    df_jams["minute"] = df_jams["start_time"].astype(str).str[14:16].astype(int)
-    df_jams["period"] = np.sign(df_jams["hour"]-12)
-    df_jams["start_time"] = df_jams["start_time"].dt.tz_convert("America/Sao_Paulo")
-
-    #Get minute bins
-    bins = [0, 14, 29, 44, 59]
-    labels = []
-    for i in range(1,len(bins)):
-        if i==1:
-            labels.append(str(bins[i-1]) + " a " + str(bins[i]))
-        else:
-            labels.append(str(bins[i-1]+1) + " a " + str(bins[i]))
-
-    df_jams['minute_bin'] = pd.cut(df_jams["minute"], bins, labels=labels, include_lowest=True)
-
-    #Get Geometries
-    df_jams['jams_line_list'] = df_jams['line'].apply(lambda x: [tuple([d['x'], d['y']]) for d in x])
-    #df_jams['jams_line_UTM'] = df_jams['jams_line_list'].apply(lon_lat_to_UTM)
-    df_jams['linestring'] = df_jams.apply(lambda x: LineString(x['jams_line_list']), axis=1)
-    crs_1 = {'init': 'epsg:4326'}
-    geo_jams = gpd.GeoDataFrame(df_jams, crs=crs_1, geometry="linestring")
-    crs_2 = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-    geo_jams = geo_jams.to_crs(crs_2)
-
-    return geo_jams
 
 def df_to_geojson(df, filename="result_geojson.json"):
     features = []
