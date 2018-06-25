@@ -25,7 +25,7 @@ def connect_database(database_dict):
 
     return meta
 
-def prep_section_tosql(section_path):
+def wkt_to_df(wkt_file):
     columns = {"objectid": "id_arcgis",
               "codlogra": "street_code",
               "nomelog": "street_name",
