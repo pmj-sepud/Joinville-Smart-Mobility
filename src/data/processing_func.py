@@ -25,7 +25,7 @@ def connect_database(database_dict):
 
     return meta
 
-def prep_section_tosql(section_path):
+def wkt_to_df(wkt_file):
     columns = {"objectid": "id_arcgis",
               "codlogra": "street_code",
               "nomelog": "street_name",
@@ -35,7 +35,7 @@ def prep_section_tosql(section_path):
               }
     cols = list(columns.values())
 
-    df_sections = (pd.read_csv(section_path, encoding="latin1", decimal=",")
+    df_sections = (pd.read_csv(wkt_file, encoding="latin1", decimal=",")
                      .rename(columns=columns)
                      .reindex(columns=cols)
                      .dropna(subset=["street_name"])
