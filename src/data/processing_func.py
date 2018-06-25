@@ -43,6 +43,68 @@ def wkt_to_df(wkt_file):
 
     return df_sections
 
+def transform_geo_sections(df_sections):
+    """
+    There has to be a column called "wkt" for this function to work.
+    """
+
+    def parse_wkt(df):
+        df["linestring"] = df.wkt.apply(lambda x: wkt_loads(x))
+        df = df.drop("wkt", axis=1)
+        return df
+
+    def get_main_direction(min_x, min_y, max_x, max_y):
+        delta_x = max_x - min_x
+        delta_y = max_y - min_y
+        if delta_y >= delta_x:
+            return "Norte/Sul"
+        else:
+            return "Leste/Oeste"
+
+    df_sections = (df_sections
+                      .pipe(parse_wkt)
+                      .assign(min_x=lambda df: pd.Series([item.bounds[0] for _, item in df.linestring.iteritems()],
+                                                         index=df.index),
+                              min_y=lambda df: pd.Series([item.bounds[1] for _, item in df.linestring.iteritems()],
+                                                         index=df.index),
+                              max_x=lambda df: pd.Series([item.bounds[2] for _, item in df.linestring.iteritems()],
+                                                         index=df.index),
+                              max_y=lambda df: pd.Series([item.bounds[3] for _, item in df.linestring.iteritems()],
+                                                         index=df.index),                           
+                             )
+                  )
+
+    #Get Street Direction
+    gb = (df_sections.groupby("street_name")
+                     .agg({"min_x": "min",
+                           "min_y": "min",
+                           "max_x": "max",
+                           "max_y": "max",})
+                     .assign(street_direction=lambda df: pd.Series([get_main_direction(min_x=row.min_x,
+                                                                                       min_y=row.min_y,
+                                                                                       max_x=row.max_x,
+                                                                                       max_y=row.max_y) for row in df.itertuples(index=False)],
+                                                                   index=df.index)
+                            )
+                     .loc[:, "street_direction"]
+         )
+
+    df_sections = df_sections.join(gb, on="street_name")
+
+    df_sections = (df_sections
+                  .assign(section_direction=lambda df: pd.Series([get_main_direction(min_x=row.min_x,
+                                                                                     min_y=row.min_y,
+                                                                                     max_x=row.max_x,
+                                                                                     max_y=row.max_y) for row in df.itertuples(index=False)],
+                                                                 index=df.index),                      
+                         )
+                  )
+
+    crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+    geo_sections = gpd.GeoDataFrame(df_sections, crs=crs, geometry="linestring")
+
+    return geo_sections
+
 def allocate_jams(jams, network, big_buffer, small_buffer, network_directional=False):
 
     """
@@ -158,70 +220,6 @@ def allocate_jams(jams, network, big_buffer, small_buffer, network_directional=F
     allocated_jams.drop(labels=["jams_small_polygon", "jams_big_polygon"] , axis=1, inplace=True)
     
     return allocated_jams
-
-def extract_geo_sections(meta):
-
-    def read_wkt(df):
-        df["linestring"] = df.wkt.apply(lambda x: wkt_loads(x))
-        df = df.drop("wkt", axis=1)
-        return df
-
-    def get_main_direction(min_x, min_y, max_x, max_y):
-        delta_x = max_x - min_x
-        delta_y = max_y - min_y
-        if delta_y >= delta_x:
-            return "Norte/Sul"
-        else:
-            return "Leste/Oeste"
-
-    meta.reflect(schema="geo")
-    section = meta.tables['geo.sections']
-    sections_query = section.select()
-    df_sections = pd.read_sql(sections_query, con=meta.bind, index_col="id")
-    df_sections = (df_sections
-                      .pipe(read_wkt)
-                      .assign(min_x=lambda df: pd.Series([item.bounds[0] for _, item in df.linestring.iteritems()],
-                                                         index=df.index),
-                              min_y=lambda df: pd.Series([item.bounds[1] for _, item in df.linestring.iteritems()],
-                                                         index=df.index),
-                              max_x=lambda df: pd.Series([item.bounds[2] for _, item in df.linestring.iteritems()],
-                                                         index=df.index),
-                              max_y=lambda df: pd.Series([item.bounds[3] for _, item in df.linestring.iteritems()],
-                                                         index=df.index),                           
-                             )
-                  )
-
-    #Get Street Direction
-    gb = (df_sections.groupby("street_name")
-                     .agg({"min_x": "min",
-                          "min_y": "min",
-                          "max_x": "max",
-                          "max_y": "max",})
-                     .assign(street_direction=lambda df: pd.Series([get_main_direction(min_x=row.min_x,
-                                                                                       min_y=row.min_y,
-                                                                                       max_x=row.max_x,
-                                                                                       max_y=row.max_y) for row in df.itertuples(index=False)],
-                                                                   index=df.index)
-                            )
-                     .loc[:, "street_direction"]
-         )
-
-    df_sections = df_sections.join(gb, on="street_name")
-
-    df_sections = (df_sections
-                  .assign(section_direction=lambda df: pd.Series([get_main_direction(min_x=row.min_x,
-                                                                                     min_y=row.min_y,
-                                                                                     max_x=row.max_x,
-                                                                                     max_y=row.max_y) for row in df.itertuples(index=False)],
-                                                                 index=df.index),                      
-                         )
-                  )
-
-    crs = "+proj=utm +zone=22J, +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-    geo_sections = gpd.GeoDataFrame(df_sections, crs=crs, geometry="linestring")
-    #geo_sections = geo_sections.to_crs({'init': 'epsg:4326'})
-
-    return geo_sections
 
 def extract_df_jams(meta, date_begin, date_end, weekends=True, periods=None):
     meta.reflect(schema="waze")
