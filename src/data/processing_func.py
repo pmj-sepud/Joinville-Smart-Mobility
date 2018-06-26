@@ -78,11 +78,11 @@ def transform_geo_jams(df_jams):
 
     #Get date information
     df_jams["start_time"] = pd.to_datetime(df_jams["start_time"], utc=True)
+    df_jams["start_time"] = df_jams["start_time"].dt.tz_convert("America/Sao_Paulo")
     df_jams["date"] = df_jams["start_time"].dt.date
     df_jams["hour"] = df_jams["start_time"].astype(str).str[11:13].astype(int)
     df_jams["minute"] = df_jams["start_time"].astype(str).str[14:16].astype(int)
     df_jams["period"] = np.sign(df_jams["hour"]-12)
-    df_jams["start_time"] = df_jams["start_time"].dt.tz_convert("America/Sao_Paulo")
 
     #Get minute bins
     bins = [0, 14, 29, 44, 59]
