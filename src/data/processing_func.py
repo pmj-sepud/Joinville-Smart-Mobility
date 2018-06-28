@@ -33,6 +33,7 @@ def extract_df_jams(meta, date_begin, date_end, weekends=True, periods=None):
     query = select([data_files.c.start_time,
                     data_files.c.id,
                     jams.c.uuid,
+                    jams.c.street,
                     jams.c.level,
                     jams.c.length,
                     jams.c.speed_kmh,
