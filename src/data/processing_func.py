@@ -37,6 +37,7 @@ def extract_df_jams(meta, date_begin, date_end, weekends=True, periods=None):
                     jams.c.level,
                     jams.c.length,
                     jams.c.speed_kmh,
+                    jams.c.speed,
                     jams.c.delay,
                     jams.c.line])
     
