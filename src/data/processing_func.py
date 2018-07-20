@@ -76,7 +76,7 @@ def extract_df_jams(meta, date_begin, date_end, weekends=True, periods=None):
 def transform_geo_jams(df_jams):
 
     #Get Directions
-    df_jams.loc[:, ("LonDirection","LatDirection", "MajorDirection")] = df_jams["line"].apply(get_direction)
+    df_jams.loc[:, ["LonDirection","LatDirection", "MajorDirection"]] = df_jams["line"].apply(get_direction)
 
     #Get date information
     df_jams.loc[:, "start_time"] = pd.to_datetime(df_jams["start_time"], utc=True)
